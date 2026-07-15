@@ -1,0 +1,26 @@
+---
+- name: Ensure demo_data directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/demo_data"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Download and extract pipelines_check demo (skipped if already present)
+  ansible.builtin.unarchive:
+    src: "https://github.com/lsst/pipelines_check/archive/{{ lsst_demo_pipelines_check_version }}.tar.gz"
+    dest: "{{ lsst_install_dir }}/demo_data"
+    remote_src: true
+    creates: "{{ lsst_install_dir }}/demo_data/pipelines_check-{{ lsst_demo_pipelines_check_version }}"
+
+- name: Run pipelines_check demo
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    setup -r .
+    ./bin/run_demo.sh
+  args:
+    chdir: "{{ lsst_install_dir }}/demo_data/pipelines_check-{{ lsst_demo_pipelines_check_version }}"
+    executable: /bin/bash
+  changed_when: true

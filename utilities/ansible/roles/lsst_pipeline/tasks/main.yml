@@ -1,0 +1,58 @@
+---
+- name: Ensure shared install directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Ensure lsst_stack directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/lsst_stack"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Download lsstinstall
+  ansible.builtin.get_url:
+    url: https://ls.st/lsstinstall
+    dest: "{{ lsst_install_dir }}/lsst_stack/lsstinstall"
+    mode: "0755"
+    group: "{{ lsst_shared_group }}"
+
+- name: Run lsstinstall (skipped if the stack is already bootstrapped)
+  ansible.builtin.command:
+    cmd: "./lsstinstall -T {{ lsst_version }}"
+    chdir: "{{ lsst_install_dir }}/lsst_stack"
+    creates: "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+
+- name: Install lsst_distrib and apply shebangtron (skipped if already provisioned)
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source loadLSST.sh
+    eups distrib install -t {{ lsst_version }} lsst_distrib
+    curl -sSL https://raw.githubusercontent.com/lsst/shebangtron/main/shebangtron | python
+    setup lsst_distrib
+    touch .provisioned
+  args:
+    chdir: "{{ lsst_install_dir }}/lsst_stack"
+    executable: /bin/bash
+    creates: "{{ lsst_install_dir }}/lsst_stack/.provisioned"
+
+- name: Run pipelines_check demo smoke test
+  ansible.builtin.include_tasks: demo_check.yml
+  when: lsst_run_demo_check | bool
+
+- name: Ensure the whole install directory is owned by the shared group
+  ansible.builtin.command:
+    cmd: "chgrp -R {{ lsst_shared_group }} {{ lsst_install_dir }}"
+  changed_when: false
+
+- name: Ensure group read/write and setgid propagation across install directory
+  ansible.builtin.shell: |
+    set -euo pipefail
+    chmod -R g+rwX "{{ lsst_install_dir }}"
+    find "{{ lsst_install_dir }}" -type d -exec chmod g+s {} +
+  args:
+    executable: /bin/bash
+  changed_when: false

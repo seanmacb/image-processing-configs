@@ -1,0 +1,17 @@
+---
+# Directory on the target server where the pipeline gets installed.
+# It is shared between all members of lsst_shared_group, so everything
+# created under it is group-owned with the setgid bit set.
+lsst_install_dir: "/disk/gfs_grpdata/des/lsst_pipeline/v29_2_1"
+
+# Linux group that should have shared read/write access to lsst_install_dir.
+# ansible_user must already be a member of this group on the target host.
+lsst_shared_group: "des"
+
+# eups distrib / lsstinstall version tag to install.
+lsst_version: "v29_2_1"
+
+# Whether to download and run the pipelines_check demo as a smoke test
+# after installation.
+lsst_run_demo_check: true
+lsst_demo_pipelines_check_version: "29.2.1"

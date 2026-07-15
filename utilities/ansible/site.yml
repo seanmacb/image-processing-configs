@@ -1,0 +1,7 @@
+---
+- name: Install LSST Science Pipelines on shared server storage
+  hosts: lsst_servers
+  gather_facts: true
+
+  roles:
+    - lsst_pipeline
