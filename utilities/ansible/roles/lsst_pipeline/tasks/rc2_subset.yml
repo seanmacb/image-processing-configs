@@ -1,0 +1,33 @@
+---
+- name: Ensure demo_data directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/demo_data"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Install git-lfs hooks and clone rc2_subset dataset (skipped if already present)
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    git lfs install
+    git clone -b {{ lsst_rc2_subset_version }} https://github.com/lsst/rc2_subset
+  args:
+    chdir: "{{ lsst_install_dir }}/demo_data"
+    executable: /bin/bash
+    creates: "{{ lsst_install_dir }}/demo_data/rc2_subset"
+
+- name: Run rc2_subset smoke test
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    setup -j -r .
+    butler query-data-ids SMALL_HSC exposure,detector --collections HSC/RC2/defaults --datasets raw
+    butler query-collections SMALL_HSC
+    butler query-dataset-types SMALL_HSC
+  args:
+    chdir: "{{ lsst_install_dir }}/demo_data/rc2_subset"
+    executable: /bin/bash
+  changed_when: true

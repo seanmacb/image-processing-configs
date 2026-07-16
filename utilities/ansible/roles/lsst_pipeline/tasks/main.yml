@@ -43,6 +43,10 @@
   ansible.builtin.include_tasks: demo_check.yml
   when: lsst_run_demo_check | bool
 
+- name: Set up rc2_subset dataset for the tutorial
+  ansible.builtin.include_tasks: rc2_subset.yml
+  when: lsst_run_rc2_subset_check | bool
+
 - name: Ensure the whole install directory is owned by the shared group
   ansible.builtin.command:
     cmd: "chgrp -R {{ lsst_shared_group }} {{ lsst_install_dir }}"

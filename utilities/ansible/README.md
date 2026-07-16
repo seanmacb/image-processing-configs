@@ -18,6 +18,9 @@ on a remote server, mirroring the manual steps recorded in `_previous.txt`.
    - `lsst_version` — eups distrib / lsstinstall version tag.
    - `lsst_run_demo_check` — run the `pipelines_check` demo as a smoke test
      after install (default: true).
+   - `lsst_run_rc2_subset_check` — clone the `rc2_subset` tutorial dataset
+     and run a `butler` smoke test against it after install (default: true).
+     Uses `git`/`git-lfs` from the sourced LSST stack environment.
 
 ## Run
 
@@ -55,5 +58,7 @@ ansible-playbook site.yml -e ansible_ssh_pass=x -v
   and re-runs `setup lsst_distrib`.
 - Optionally downloads `pipelines_check` and runs `./bin/run_demo.sh` to
   verify the install.
+- Optionally clones `rc2_subset` and runs `butler query-*` commands against
+  it as a further smoke test.
 - Recursively fixes group ownership/permissions (`chgrp`, `chmod g+rwX`,
   setgid on directories) so every group member can use the shared install.
