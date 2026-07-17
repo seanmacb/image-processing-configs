@@ -1,0 +1,79 @@
+---
+- name: Ensure repos directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/repos"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Clone obs_decam (skipped if already present)
+  ansible.builtin.git:
+    repo: "{{ lsst_custom_filters_obs_decam_git_url }}"
+    dest: "{{ lsst_custom_filters_obs_decam_dir }}"
+    version: "{{ lsst_custom_filters_obs_decam_ref }}"
+    update: false
+
+- name: Build obs_decam so it can be set up as a LOCAL eups package
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    scons -j8
+  args:
+    chdir: "{{ lsst_custom_filters_obs_decam_dir }}"
+    executable: /bin/bash
+    creates: "{{ lsst_custom_filters_obs_decam_dir }}/.sconsign.dblite"
+
+- name: Create local branch for custom filter edits (skipped if it already exists)
+  ansible.builtin.shell: |
+    set -eo pipefail
+    git rev-parse --verify {{ lsst_custom_filters_obs_decam_branch }} >/dev/null 2>&1 && exit 0
+    git checkout -b {{ lsst_custom_filters_obs_decam_branch }}
+  args:
+    chdir: "{{ lsst_custom_filters_obs_decam_dir }}"
+    executable: /bin/bash
+  register: lsst_custom_filters_obs_decam_branch_result
+  changed_when: "'Switched to a new branch' in lsst_custom_filters_obs_decam_branch_result.stdout"
+
+# decamFilters.py defines DECAM_FILTER_DEFINITIONS as a
+# FilterDefinitionCollection(...) tuple. Rather than editing inside that
+# literal (fragile if upstream reformats it), we append a managed block that
+# rebuilds the collection from the existing one plus our extra entries -
+# FilterDefinitionCollection is a Sequence so `*` unpacking works.
+- name: Add custom FilterDefinition entries to decamFilters.py
+  ansible.builtin.blockinfile:
+    path: "{{ lsst_custom_filters_obs_decam_dir }}/python/lsst/obs/decam/decamFilters.py"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - lsst_custom_filters"
+    block: |
+      DECAM_FILTER_DEFINITIONS = FilterDefinitionCollection(
+          *DECAM_FILTER_DEFINITIONS,
+      {% for f in lsst_custom_filters %}
+          FilterDefinition(physical_filter="{{ f.physical_filter }}", band="{{ f.band }}"),
+      {% endfor %}
+      )
+
+- name: Check config/filterMap.py has the expected config.filterMap anchor
+  ansible.builtin.command:
+    cmd: grep -q "^config.filterMap = {" "{{ lsst_custom_filters_obs_decam_dir }}/config/filterMap.py"
+  changed_when: false
+
+- name: Add custom band mappings to obs_decam config/filterMap.py
+  ansible.builtin.blockinfile:
+    path: "{{ lsst_custom_filters_obs_decam_dir }}/config/filterMap.py"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - lsst_custom_filters"
+    insertafter: "^config\\.filterMap = \\{"
+    block: |
+      {% for f in lsst_custom_filters %}
+          "{{ f.band }}": "{{ f.filter_map_target }}",
+      {% endfor %}
+
+- name: Set up obs_decam as a LOCAL eups package and verify
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    setup -j -r "{{ lsst_custom_filters_obs_decam_dir }}"
+    eups list obs_decam | grep -q LOCAL
+  args:
+    executable: /bin/bash
+  changed_when: false

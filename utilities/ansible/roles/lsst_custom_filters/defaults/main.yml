@@ -1,0 +1,54 @@
+---
+# This role is NOT part of site.yml. It is applied on demand via
+# custom_filters.yml, on top of an existing lsst_pipeline install
+# (uses lsst_install_dir / lsst_shared_group from group_vars/all.yml).
+
+# git source for the local obs_decam checkout. Cloning a working copy and
+# pointing eups at it as a LOCAL package lets us add filters without
+# rebuilding/patching the shared lsst_distrib install.
+lsst_custom_filters_obs_decam_git_url: "https://github.com/lsst/obs_decam.git"
+lsst_custom_filters_obs_decam_ref: "v30.0.2"
+lsst_custom_filters_obs_decam_dir: "{{ lsst_install_dir }}/repos/obs_decam"
+# Local branch created on top of obs_decam_ref to hold the filter edits,
+# so `git status`/history clearly separates them from upstream.
+lsst_custom_filters_obs_decam_branch: "uzh/custom-decam-filters"
+
+# git source for the local skymap checkout (same LOCAL-package approach,
+# needed to register new bands in SUPPORTED_FILTERS).
+lsst_custom_filters_skymap_git_url: "https://github.com/lsst/skymap.git"
+lsst_custom_filters_skymap_ref: "v30.0.2"
+lsst_custom_filters_skymap_dir: "{{ lsst_install_dir }}/repos/skymap"
+lsst_custom_filters_skymap_branch: "uzh/custom-decam-filters"
+
+# Path to the "activate everything" script written by the lsst_prepare_env
+# role (see utilities/ansible/roles/lsst_prepare_env). Used by verify.yml to
+# test the real activation path (sourcing this script in a fresh shell)
+# rather than manually re-running `setup -j -r`. Falls back to the
+# lsst_prepare_env role's own default script name if that role's vars
+# aren't loaded in the current play.
+lsst_custom_filters_setup_env_script: "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name | default('setup_env.sh') }}"
+
+# Custom filters to register. Add more entries here as new filters are
+# needed - each is applied idempotently (re-running just re-generates the
+# same managed blocks).
+lsst_custom_filters:
+  - physical_filter: "N395 DECam c0015 3950.0 100.0"
+    band: "N395"
+    # Existing broad-band filter to reuse for reference-catalog matching,
+    # written into obs_decam's config/filterMap.py (config.filterMap dict).
+    filter_map_target: "u"
+  - physical_filter: "M411 DECam c0017 4112.0 264.0"
+    band: "M411"
+    filter_map_target: "g"
+  - physical_filter: "M438 DECam c0019 4380.0 260.0"
+    band: "M438"
+    filter_map_target: "g"
+  - physical_filter: "M464 DECam c0018 4640.0 264.0"
+    band: "M464"
+    filter_map_target: "g"
+  - physical_filter: "M490 DECam c0020 4900.0 260.0"
+    band: "M490"
+    filter_map_target: "g"
+  - physical_filter: "M517 DECam c0021 5170.0 260.0"
+    band: "M517"
+    filter_map_target: "g"

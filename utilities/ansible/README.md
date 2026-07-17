@@ -66,7 +66,91 @@ ansible-playbook site.yml -e ansible_ssh_pass=x -v
   script" below), a single script users source to fully activate the
   environment.
 
+## Custom DECam filters (separate, opt-in role)
 
+Adding a custom DECam filter (e.g. `M438`) means editing `obs_decam`/`skymap`
+source, which shouldn't happen automatically on every `site.yml` run. This
+lives in its own role, `lsst_custom_filters`, applied via its own playbook:
+
+```
+ansible-playbook custom_filters.yml
+```
+
+It is **not** referenced from `site.yml` and must be run explicitly, after
+`lsst_pipeline` has already provisioned the shared stack.
+
+**Keep versions in sync**: `lsst_custom_filters_obs_decam_ref` and
+`lsst_custom_filters_skymap_ref` (in
+`roles/lsst_custom_filters/defaults/main.yml`) should be set to the same
+release tag as `lsst_version` (in `group_vars/all.yml`), e.g. both
+`v30.0.2`/`30.0.2` for the same release — otherwise the `LOCAL:` checkouts
+this role builds against can drift from the `lsst_distrib` version actually
+installed. Ansible doesn't enforce this; there's no cross-role default
+shared between the two files, so update both by hand when bumping the LSST
+version.
+
+What it does:
+
+- Clones `obs_decam` and `skymap` into `lsst_install_dir/repos/`, builds them
+  with `scons`, and checks out a local branch (`uzh/custom-decam-filters`) to
+  hold the edits.
+- Appends the filters listed in `lsst_custom_filters` (see
+  `roles/lsst_custom_filters/defaults/main.yml`) as a managed block in
+  `decamFilters.py`, and their reference-catalog mapping
+  (`config.filterMap`) in `obs_decam/config/filterMap.py`.
+- Appends the new bands to `SUPPORTED_FILTERS` in `skymap/python/lsst/skymap/packers.py`.
+- Uses `setup -j -r <dir>` to make eups prefer these checkouts (`LOCAL:`)
+  over the installed packages for the rest of this play. Activating this in
+  new shells/jobs (since `eups setup -j -r` only applies per-shell) is
+  handled by `setup_env.sh` (see "Environment activation script" below),
+  not by this role — it scans `repos/` for local checkouts at *source*
+  time, so it picks these up automatically without needing to be
+  regenerated after this playbook runs.
+- To add another filter later, add an entry to `lsst_custom_filters` and
+  re-run the playbook - it's idempotent (managed blocks get regenerated,
+  not duplicated).
+
+**Not included** (needs a butler repo that doesn't exist in this ansible
+setup yet): `butler register-instrument $REPO lsst.obs.decam.DarkEnergyCamera
+--update`. Run that manually, once, against each butler repo after this role
+has run and after the repo exists.
+
+**Worth checking before relying on this**: the upstream anchor lines this
+role edits around (`config.filterMap = {` in `filterMap.py`, the narrow-band
+list in `packers.py`) are asserted to exist before editing, so the play
+fails loudly instead of silently mis-inserting if `obs_decam`/`skymap`
+change upstream - but it's still worth diffing the generated files after a
+first run.
+
+### Verifying the custom filters
+
+```
+ansible-playbook custom_filters_verify.yml
+```
+
+Read-only, safe to re-run any time after `custom_filters.yml` has run. Checks
+that every entry in `lsst_custom_filters` is actually registered end-to-end,
+not just present in the edited source files:
+
+- Present in obs_decam's `DECAM_FILTER_DEFINITIONS` and
+  `DarkEnergyCamera.filterDefinitions` (imported, not grepped).
+- Present in `config.filterMap` in obs_decam's `config/filterMap.py`.
+- Present in skymap's `SkyMapDimensionPacker.SUPPORTED_FILTERS` (imported).
+- The `LOCAL:` obs_decam/skymap checkouts are what actually get loaded when
+  a fresh shell sources the generated `setup_env.sh` - this doubles as a
+  regression test of the `lsst_prepare_env` role's activation script.
+- Recognized by a butler registry: creates a throwaway SQLite butler repo,
+  runs `butler register-instrument ... lsst.obs.decam.DarkEnergyCamera`
+  against it, and queries the `physical_filter`/`band` dimension records to
+  confirm the custom filters show up. This is the actual mechanism real
+  analysis butler repos depend on to recognize the new filters - the
+  throwaway repo is deleted afterward and no real butler repo is touched.
+
+This does **not** check or update any *existing* real butler repo - see
+"Not included" above; this project doesn't track any butler repo path, so
+there's nothing here to discover and re-register automatically. After
+adding a new filter, remember to run `register-instrument --update`
+yourself against each real repo that needs it.
 
 
 ## Environment activation script

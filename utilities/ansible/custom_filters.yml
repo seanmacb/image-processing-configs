@@ -1,0 +1,10 @@
+---
+# Not included in site.yml on purpose - run explicitly, after lsst_pipeline
+# has already provisioned the shared stack:
+#   ansible-playbook custom_filters.yml
+- name: Register custom DECam filters against the shared pipeline install
+  hosts: lsst_servers
+  gather_facts: true
+
+  roles:
+    - lsst_custom_filters

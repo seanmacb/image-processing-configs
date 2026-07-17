@@ -1,0 +1,20 @@
+---
+- name: Register custom filters in obs_decam
+  ansible.builtin.include_tasks: obs_decam.yml
+
+- name: Register custom filter bands in skymap
+  ansible.builtin.include_tasks: skymap.yml
+
+- name: Ensure the custom_filters repos are owned by the shared group
+  ansible.builtin.command:
+    cmd: "chgrp -R {{ lsst_shared_group }} {{ lsst_install_dir }}/repos"
+  changed_when: false
+
+- name: Ensure group read/write and setgid propagation on custom_filters repos
+  ansible.builtin.shell: |
+    set -euo pipefail
+    chmod -R g+rwX "{{ lsst_install_dir }}/repos"
+    find "{{ lsst_install_dir }}/repos" -type d -exec chmod g+s {} +
+  args:
+    executable: /bin/bash
+  changed_when: false

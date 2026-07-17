@@ -1,0 +1,67 @@
+---
+- name: Ensure repos directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/repos"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Clone skymap (skipped if already present)
+  ansible.builtin.git:
+    repo: "{{ lsst_custom_filters_skymap_git_url }}"
+    dest: "{{ lsst_custom_filters_skymap_dir }}"
+    version: "{{ lsst_custom_filters_skymap_ref }}"
+    update: false
+
+- name: Build skymap so it can be set up as a LOCAL eups package
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    scons -j8
+  args:
+    chdir: "{{ lsst_custom_filters_skymap_dir }}"
+    executable: /bin/bash
+    creates: "{{ lsst_custom_filters_skymap_dir }}/.sconsign.dblite"
+
+- name: Create local branch for custom filter edits (skipped if it already exists)
+  ansible.builtin.shell: |
+    set -eo pipefail
+    git rev-parse --verify {{ lsst_custom_filters_skymap_branch }} >/dev/null 2>&1 && exit 0
+    git checkout -b {{ lsst_custom_filters_skymap_branch }}
+  args:
+    chdir: "{{ lsst_custom_filters_skymap_dir }}"
+    executable: /bin/bash
+  register: lsst_custom_filters_skymap_branch_result
+  changed_when: "'Switched to a new branch' in lsst_custom_filters_skymap_branch_result.stdout"
+
+# SUPPORTED_FILTERS in packers.py is a tuple built by concatenating several
+# lists; new bands must land inside that expression, not appended after it
+# (which would be outside the assignment). We anchor on the last known
+# narrow-band list from upstream and fail loudly if it's gone, rather than
+# silently inserting at EOF and producing a syntax error.
+- name: Check packers.py has the expected SUPPORTED_FILTERS anchor line
+  ansible.builtin.command:
+    cmd: >-
+      grep -qE '^\s*\+ \[f"N\{d\}" for d in \(419, 540, 708, 964\)\]'
+      "{{ lsst_custom_filters_skymap_dir }}/python/lsst/skymap/packers.py"
+  changed_when: false
+
+- name: Add custom filter bands to skymap SUPPORTED_FILTERS
+  ansible.builtin.blockinfile:
+    path: "{{ lsst_custom_filters_skymap_dir }}/python/lsst/skymap/packers.py"
+    marker: "    # {mark} ANSIBLE MANAGED BLOCK - lsst_custom_filters"
+    insertafter: '^\s*\+ \[f"N\{d\}" for d in \(419, 540, 708, 964\)\]'
+    block: |
+      + [{% for f in lsst_custom_filters %}"{{ f.band }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
+- name: Set up skymap as a LOCAL eups package and verify
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
+    setup lsst_distrib
+    setup -j -r "{{ lsst_custom_filters_skymap_dir }}"
+    eups list skymap | grep -q LOCAL
+  args:
+    executable: /bin/bash
+  changed_when: false
