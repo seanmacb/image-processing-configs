@@ -24,20 +24,34 @@ on a remote server, mirroring the manual steps recorded in `_previous.txt`.
 
 ## Run
 
-```
-ansible-playbook site.yml
-```
+1. Install the shared pipeline stack (creates `lsst_install_dir`, runs
+   `lsstinstall`/`eups distrib install`, writes `setup_env.sh`):
 
-Add `-v` to see the stdout/stderr of each command (e.g. `lsstinstall`, `eups
-distrib install`, the demo run), which is hidden by default:
+   ```
+   ansible-playbook site.yml -v
+   ```
 
-```
-ansible-playbook site.yml -v
-```
+   `-v` shows the stdout/stderr of each command (`lsstinstall`, `eups distrib
+   install`, the demo run), which is hidden otherwise — drop it for quieter
+   output.
 
-All steps are idempotent (guarded with `creates:`/marker files), so re-running
-the playbook only performs work that hasn't happened yet, except the demo
-smoke test, which always re-runs when enabled.
+   All steps are idempotent (guarded with `creates:`/marker files), so
+   re-running the playbook only performs work that hasn't happened yet,
+   except the demo smoke test, which always re-runs when enabled.
+
+2. *(optional)* Register custom DECam filters on top of the shared stack —
+   see "Custom DECam filters" below:
+
+   ```
+   ansible-playbook custom_filters.yml
+   ```
+
+3. *(optional)* Verify the custom filters registered correctly — see
+   "Verifying the custom filters" below:
+
+   ```
+   ansible-playbook custom_filters_verify.yml
+   ```
 
 ## Note: SSH on `linux.physik.uzh.ch` hosts
 
