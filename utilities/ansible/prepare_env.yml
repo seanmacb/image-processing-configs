@@ -1,7 +1,7 @@
 ---
-# Not included in site.yml on purpose - run explicitly, after lsst_pipeline
-# has already provisioned the shared stack (and, optionally, after
-# custom_filters.yml):
+# lsst_prepare_env also runs as part of site.yml now, so this playbook is
+# only needed to regenerate setup_env.sh on its own (e.g. after tweaking
+# lsst_prepare_env_script_name), without re-running the rest of site.yml:
 #   ansible-playbook prepare_env.yml
 - name: Generate the combined environment activation script for LSST Science Pipelines
   hosts: lsst_servers

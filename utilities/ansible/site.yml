@@ -5,3 +5,4 @@
 
   roles:
     - lsst_pipeline
+    - lsst_prepare_env

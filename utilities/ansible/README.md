@@ -62,23 +62,19 @@ ansible-playbook site.yml -e ansible_ssh_pass=x -v
   it as a further smoke test.
 - Recursively fixes group ownership/permissions (`chgrp`, `chmod g+rwX`,
   setgid on directories) so every group member can use the shared install.
+- Writes `lsst_install_dir/setup_env.sh` (see "Environment activation
+  script" below), a single script users source to fully activate the
+  environment.
 
 
-## Environment activation script (separate, opt-in role)
+
+
+## Environment activation script
 
 Users need a single thing to `source` that fully activates the shared
 stack, including any locally modified eups packages and correct
-permissions on the shared butler repo. This lives in its own role,
-`lsst_prepare_env`, applied via its own playbook:
-
-```
-ansible-playbook prepare_env.yml
-```
-
-It is **not** referenced from `site.yml` yet (planned as an automatic step
-of the initial install once it's had more real-world use) and must be run
-explicitly, after `lsst_pipeline` (and optionally `lsst_custom_filters`) has
-already provisioned the shared install. It writes
+permissions on the shared butler repo. This is the `lsst_prepare_env` role,
+run automatically as part of `site.yml` (after `lsst_pipeline`). It writes
 `lsst_install_dir/setup_env.sh`, which users source in their shell or batch
 job:
 
