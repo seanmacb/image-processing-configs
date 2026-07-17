@@ -105,7 +105,13 @@
   ansible.builtin.shell: |
     set -eo pipefail
     source "{{ lsst_custom_filters_setup_env_script }}"
-    tmp_repo="$(mktemp -d)"
+    # Explicit template with no dot in the directory name: butler create
+    # infers the config serialization format from what looks like a file
+    # extension on the repo path, and the default mktemp template
+    # (tmp.XXXXXXXX) trips it up - the random suffix after the dot gets
+    # read as the format, e.g. error "Unsupported format for Config
+    # serialization: krc9h6cqw2".
+    tmp_repo="$(mktemp -d "${TMPDIR:-/tmp}/lsst_custom_filters_verify_XXXXXX")"
     trap 'rm -rf "$tmp_repo"' EXIT
     butler create "$tmp_repo"
     butler register-instrument "$tmp_repo" lsst.obs.decam.DarkEnergyCamera
