@@ -100,41 +100,10 @@
 # butler registry's physical_filter/band dimension records. Using a
 # throwaway repo here proves that mechanism works for our custom filters
 # without touching any real (shared) butler repo - this project doesn't
-# manage any, see README "Not included".
+# manage any, see README "Not included". Runs the same standalone script
+# custom_filters.yml wrote to lsst_install_dir/testing, so users can run
+# this exact check themselves without ansible.
 - name: Verify custom filters are recognized by a butler registry after register-instrument
-  ansible.builtin.shell: |
-    set -eo pipefail
-    source "{{ lsst_custom_filters_setup_env_script }}"
-    # Explicit template with no dot in the directory name: butler create
-    # infers the config serialization format from what looks like a file
-    # extension on the repo path, and the default mktemp template
-    # (tmp.XXXXXXXX) trips it up - the random suffix after the dot gets
-    # read as the format, e.g. error "Unsupported format for Config
-    # serialization: krc9h6cqw2".
-    tmp_repo="$(mktemp -d "${TMPDIR:-/tmp}/lsst_custom_filters_verify_XXXXXX")"
-    trap 'rm -rf "$tmp_repo"' EXIT
-    butler create "$tmp_repo"
-    butler register-instrument "$tmp_repo" lsst.obs.decam.DarkEnergyCamera
-    python3 - "$tmp_repo" <<'PYEOF'
-    import sys
-    from lsst.daf.butler import Butler
-
-    butler = Butler(sys.argv[1])
-    found = {
-        (r.name, r.band)
-        for r in butler.registry.queryDimensionRecords("physical_filter", instrument="DECam")
-    }
-
-    expected = set([
-    {% for f in lsst_custom_filters %}
-        ("{{ f.physical_filter }}", "{{ f.band }}"),
-    {% endfor %}
-    ])
-    missing = expected - found
-    if missing:
-        raise SystemExit(f"Custom filters missing from butler registry after register-instrument: {missing}")
-    print("butler registry: all custom filters recognized after register-instrument")
-    PYEOF
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    cmd: "{{ lsst_custom_filters_testing_dir }}/{{ lsst_custom_filters_check_script_name }}"
   changed_when: false

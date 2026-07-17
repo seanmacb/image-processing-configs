@@ -145,6 +145,11 @@ What it does:
 - To add another filter later, add an entry to `lsst_custom_filters` and
   re-run the playbook - it's idempotent (managed blocks get regenerated,
   not duplicated).
+- Writes `lsst_install_dir/testing/check_butler_filter_registration.sh`, a
+  standalone script (no ansible needed) users can run themselves to check
+  that the shared install activates correctly and that the custom filters
+  are recognized by a butler registry - see "Verifying the custom filters"
+  below, which runs this same script.
 
 **Not included** (needs a butler repo that doesn't exist in this ansible
 setup yet): `butler register-instrument $REPO lsst.obs.decam.DarkEnergyCamera
@@ -175,12 +180,17 @@ not just present in the edited source files:
 - The `LOCAL:` obs_decam/skymap checkouts are what actually get loaded when
   a fresh shell sources the generated `setup_env.sh` - this doubles as a
   regression test of the `lsst_prepare_env` role's activation script.
-- Recognized by a butler registry: creates a throwaway SQLite butler repo,
-  runs `butler register-instrument ... lsst.obs.decam.DarkEnergyCamera`
-  against it, and queries the `physical_filter`/`band` dimension records to
-  confirm the custom filters show up. This is the actual mechanism real
-  analysis butler repos depend on to recognize the new filters - the
-  throwaway repo is deleted afterward and no real butler repo is touched.
+- Recognized by a butler registry: runs
+  `lsst_install_dir/testing/check_butler_filter_registration.sh` (written by
+  `custom_filters.yml`, see "What it does" above), which creates a throwaway
+  SQLite butler repo, runs `butler register-instrument ...
+  lsst.obs.decam.DarkEnergyCamera` against it, and queries the
+  `physical_filter`/`band` dimension records to confirm the custom filters
+  show up. This is the actual mechanism real analysis butler repos depend on
+  to recognize the new filters - the throwaway repo is deleted afterward and
+  no real butler repo is touched. Since it's a standalone script, users can
+  run it directly to spot-check their own shell/job setup without going
+  through ansible at all.
 
 This does **not** check or update any *existing* real butler repo - see
 "Not included" above; this project doesn't track any butler repo path, so

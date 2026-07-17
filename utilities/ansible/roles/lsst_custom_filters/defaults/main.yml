@@ -28,6 +28,14 @@ lsst_custom_filters_skymap_branch: "uzh/custom-decam-filters"
 # aren't loaded in the current play.
 lsst_custom_filters_setup_env_script: "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name | default('setup_env.sh') }}"
 
+# Standalone script, written to lsst_install_dir/testing by this role, that
+# users can run themselves (no ansible needed) to check that the shared
+# install activates correctly and that the custom filters are recognized by
+# a butler registry. Also used by verify.yml instead of embedding the same
+# check inline.
+lsst_custom_filters_testing_dir: "{{ lsst_install_dir }}/testing"
+lsst_custom_filters_check_script_name: "check_butler_filter_registration.sh"
+
 # Custom filters to register. Add more entries here as new filters are
 # needed - each is applied idempotently (re-running just re-generates the
 # same managed blocks).
