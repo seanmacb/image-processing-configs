@@ -49,6 +49,28 @@ password to enable it (needs `sshpass` installed: `sudo apt install sshpass`):
 ansible-playbook site.yml -e ansible_ssh_pass=x -v
 ```
 
+## Troubleshooting
+
+**`lsstinstall` fails with `line 374: /pkgroot: Permission denied` / `Unable to
+write pkgroot file`**: this happens after an interrupted/killed previous run
+(e.g. you Ctrl-C'd or killed a slow `ansible-playbook` mid-`lsstinstall`).
+`lsstinstall`'s stdout will show `Using existing environment
+lsst-scipipe-<version>` — it reuses the existing conda env instead of
+creating a fresh one, but that env is left partially built, so `conda
+activate` doesn't run the `eups` package's activation hook that sets
+`EUPS_PATH`. With `EUPS_PATH` empty, the script tries to write to
+`$EUPS_PATH/pkgroot`, which resolves to `/pkgroot` at the filesystem root.
+
+Fix: remove the incomplete conda env so `lsstinstall` rebuilds it from
+scratch, then re-run the playbook:
+
+```
+rm -rf <lsst_install_dir>/lsst_stack/conda/envs/lsst-scipipe-<version>
+```
+
+(check the exact env name first with `ls
+<lsst_install_dir>/lsst_stack/conda/envs/`).
+
 ## What it does
 
 - Creates `lsst_install_dir` and `lsst_install_dir/lsst_stack`, owned by
