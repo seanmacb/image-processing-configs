@@ -8,10 +8,6 @@
   gather_facts: true
 
   tasks:
-    - name: Load lsst_prepare_env's default vars (for lsst_prepare_env_script_name), without running its tasks
-      ansible.builtin.include_vars:
-        file: "{{ playbook_dir }}/roles/lsst_prepare_env/defaults/main.yml"
-
     - name: Run lsst_custom_filters verification tasks
       ansible.builtin.include_role:
         name: lsst_custom_filters

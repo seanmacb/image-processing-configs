@@ -5,17 +5,12 @@
 - name: Register custom filter bands in skymap
   ansible.builtin.include_tasks: skymap.yml
 
-- name: Ensure testing directory exists
-  ansible.builtin.file:
-    path: "{{ lsst_custom_filters_testing_dir }}"
-    state: directory
-    group: "{{ lsst_shared_group }}"
-    mode: "2775"
-
+# lsst_testing_dir is created by the lsst_pipeline role (part of site.yml),
+# not here - this role only needs to already find it in place.
 - name: Write standalone butler filter-registration check script
   ansible.builtin.template:
     src: check_butler_filter_registration.sh.j2
-    dest: "{{ lsst_custom_filters_testing_dir }}/{{ lsst_custom_filters_check_script_name }}"
+    dest: "{{ lsst_testing_dir }}/{{ lsst_custom_filters_check_script_name }}"
     group: "{{ lsst_shared_group }}"
     mode: "0775"
 

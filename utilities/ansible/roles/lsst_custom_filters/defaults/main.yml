@@ -1,7 +1,8 @@
 ---
 # This role is NOT part of site.yml. It is applied on demand via
-# custom_filters.yml, on top of an existing lsst_pipeline install
-# (uses lsst_install_dir / lsst_shared_group from group_vars/all.yml).
+# custom_filters.yml, on top of an existing lsst_pipeline install (uses
+# lsst_install_dir / lsst_shared_group / lsst_prepare_env_script_name /
+# lsst_testing_dir from group_vars/all.yml).
 
 # git source for the local obs_decam checkout. Cloning a working copy and
 # pointing eups at it as a LOCAL package lets us add filters without
@@ -20,20 +21,11 @@ lsst_custom_filters_skymap_ref: "v30.0.2"
 lsst_custom_filters_skymap_dir: "{{ lsst_install_dir }}/repos/skymap"
 lsst_custom_filters_skymap_branch: "uzh/custom-decam-filters"
 
-# Path to the "activate everything" script written by the lsst_prepare_env
-# role (see utilities/ansible/roles/lsst_prepare_env). Used by verify.yml to
-# test the real activation path (sourcing this script in a fresh shell)
-# rather than manually re-running `setup -j -r`. Falls back to the
-# lsst_prepare_env role's own default script name if that role's vars
-# aren't loaded in the current play.
-lsst_custom_filters_setup_env_script: "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name | default('setup_env.sh') }}"
-
-# Standalone script, written to lsst_install_dir/testing by this role, that
-# users can run themselves (no ansible needed) to check that the shared
-# install activates correctly and that the custom filters are recognized by
-# a butler registry. Also used by verify.yml instead of embedding the same
-# check inline.
-lsst_custom_filters_testing_dir: "{{ lsst_install_dir }}/testing"
+# Name of the standalone script this role writes to lsst_testing_dir (see
+# group_vars/all.yml) that users can run themselves (no ansible needed) to
+# check that the shared install activates correctly and that the custom
+# filters are recognized by a butler registry. Also used by verify.yml
+# instead of embedding the same check inline.
 lsst_custom_filters_check_script_name: "check_butler_filter_registration.sh"
 
 # Custom filters to register. Add more entries here as new filters are

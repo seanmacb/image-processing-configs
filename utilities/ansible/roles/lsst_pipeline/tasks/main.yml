@@ -13,6 +13,16 @@
     group: "{{ lsst_shared_group }}"
     mode: "2775"
 
+# Holds standalone check scripts written by other roles (e.g.
+# lsst_custom_filters's butler filter-registration check) - created here so
+# it exists for every install regardless of which optional roles run later.
+- name: Ensure testing directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_testing_dir }}"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
 - name: Download lsstinstall
   ansible.builtin.get_url:
     url: https://ls.st/lsstinstall

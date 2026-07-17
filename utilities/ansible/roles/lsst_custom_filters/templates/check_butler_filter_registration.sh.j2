@@ -12,11 +12,11 @@
 # butler repo under $TMPDIR (or /tmp), deleted on exit. Does not touch any
 # real butler repo.
 #
-# Usage: {{ lsst_custom_filters_testing_dir }}/{{ lsst_custom_filters_check_script_name }}
+# Usage: {{ lsst_testing_dir }}/{{ lsst_custom_filters_check_script_name }}
 
 set -eo pipefail
 
-source "{{ lsst_custom_filters_setup_env_script }}"
+source "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name }}"
 
 # Explicit template with no dot in the directory name: butler create infers
 # the config serialization format from what looks like a file extension on

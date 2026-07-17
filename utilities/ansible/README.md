@@ -87,8 +87,10 @@ rm -rf <lsst_install_dir>/lsst_stack/conda/envs/lsst-scipipe-<version>
 
 ## What it does
 
-- Creates `lsst_install_dir` and `lsst_install_dir/lsst_stack`, owned by
-  `lsst_shared_group` with the setgid bit so new files inherit the group.
+- Creates `lsst_install_dir`, `lsst_install_dir/lsst_stack`, and
+  `lsst_testing_dir` (a home for standalone check scripts written by other
+  roles, e.g. `lsst_custom_filters`), owned by `lsst_shared_group` with the
+  setgid bit so new files inherit the group.
 - Downloads and runs `lsstinstall -T <lsst_version>`.
 - Sources `loadLSST.sh`, runs `eups distrib install`, applies `shebangtron`,
   and re-runs `setup lsst_distrib`.
@@ -145,9 +147,10 @@ What it does:
 - To add another filter later, add an entry to `lsst_custom_filters` and
   re-run the playbook - it's idempotent (managed blocks get regenerated,
   not duplicated).
-- Writes `lsst_install_dir/testing/check_butler_filter_registration.sh`, a
-  standalone script (no ansible needed) users can run themselves to check
-  that the shared install activates correctly and that the custom filters
+- Writes `check_butler_filter_registration.sh` into `lsst_testing_dir` (see
+  "What it does" for `site.yml` above - created by `lsst_pipeline`, not this
+  role), a standalone script (no ansible needed) users can run themselves to
+  check that the shared install activates correctly and that the custom filters
   are recognized by a butler registry - see "Verifying the custom filters"
   below, which runs this same script.
 

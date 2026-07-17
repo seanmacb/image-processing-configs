@@ -88,7 +88,7 @@
 - name: Verify obs_decam and skymap LOCAL checkouts are picked up by the generated setup_env.sh
   ansible.builtin.shell: |
     set -eo pipefail
-    source "{{ lsst_custom_filters_setup_env_script }}"
+    source "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name }}"
     eups list obs_decam | grep -q LOCAL
     eups list skymap | grep -q LOCAL
   args:
@@ -105,5 +105,5 @@
 # this exact check themselves without ansible.
 - name: Verify custom filters are recognized by a butler registry after register-instrument
   ansible.builtin.command:
-    cmd: "{{ lsst_custom_filters_testing_dir }}/{{ lsst_custom_filters_check_script_name }}"
+    cmd: "{{ lsst_testing_dir }}/{{ lsst_custom_filters_check_script_name }}"
   changed_when: false

@@ -8,6 +8,19 @@ lsst_install_dir: "/disk/groups/des/lsst_pipeline/v30_0_x"
 # ansible_user must already be a member of this group on the target host.
 lsst_shared_group: "des"
 
+# Name of the "activate everything" script written by lsst_prepare_env
+# (source {{ lsst_install_dir }}/<name>). Lives here rather than as an
+# lsst_prepare_env role default so other roles/playbooks (e.g.
+# lsst_custom_filters, which needs to source this script but doesn't run
+# lsst_prepare_env itself) can reference it directly without extra
+# include_vars/default() plumbing.
+lsst_prepare_env_script_name: "setup_env.sh"
+
+# Directory for standalone scripts that users can run themselves (no
+# ansible needed) to check parts of the install - e.g. lsst_custom_filters
+# writes a butler filter-registration check here.
+lsst_testing_dir: "{{ lsst_install_dir }}/testing"
+
 # eups distrib / lsstinstall version tag to install.
 lsst_version: "v30_0_2"
 
