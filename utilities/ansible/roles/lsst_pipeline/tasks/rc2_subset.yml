@@ -6,13 +6,15 @@
     group: "{{ lsst_shared_group }}"
     mode: "2775"
 
-- name: Install git-lfs hooks and clone rc2_subset dataset (skipped if already present)
+- name: Clone rc2_subset dataset and install git-lfs hooks locally (skipped if already present)
   ansible.builtin.shell: |
     set -eo pipefail
     source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
     setup lsst_distrib
-    git lfs install
     git clone -b {{ lsst_rc2_subset_version }} https://github.com/lsst/rc2_subset
+    cd rc2_subset
+    git lfs install --local
+    git lfs pull
   args:
     chdir: "{{ lsst_install_dir }}/demo_data"
     executable: /bin/bash
