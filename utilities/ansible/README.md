@@ -1,7 +1,7 @@
 # LSST Pipeline install (Ansible)
 
 Installs the LSST Science Pipelines into a shared, group-accessible directory
-on a remote server, mirroring the manual steps recorded in `_previous.txt`.
+on a remote server.
 
 ## Setup
 
