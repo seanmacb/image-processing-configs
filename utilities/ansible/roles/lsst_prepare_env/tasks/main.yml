@@ -1,0 +1,7 @@
+---
+- name: Write the combined environment activation script
+  ansible.builtin.template:
+    src: setup_env.sh.j2
+    dest: "{{ lsst_install_dir }}/{{ lsst_prepare_env_script_name }}"
+    mode: "0664"
+    group: "{{ lsst_shared_group }}"

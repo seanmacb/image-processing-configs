@@ -1,0 +1,11 @@
+---
+# Not included in site.yml on purpose - run explicitly, after lsst_pipeline
+# has already provisioned the shared stack (and, optionally, after
+# custom_filters.yml):
+#   ansible-playbook prepare_env.yml
+- name: Generate the combined environment activation script for LSST Science Pipelines
+  hosts: lsst_servers
+  gather_facts: false
+
+  roles:
+    - lsst_prepare_env

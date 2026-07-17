@@ -62,3 +62,48 @@ ansible-playbook site.yml -e ansible_ssh_pass=x -v
   it as a further smoke test.
 - Recursively fixes group ownership/permissions (`chgrp`, `chmod g+rwX`,
   setgid on directories) so every group member can use the shared install.
+
+
+## Environment activation script (separate, opt-in role)
+
+Users need a single thing to `source` that fully activates the shared
+stack, including any locally modified eups packages and correct
+permissions on the shared butler repo. This lives in its own role,
+`lsst_prepare_env`, applied via its own playbook:
+
+```
+ansible-playbook prepare_env.yml
+```
+
+It is **not** referenced from `site.yml` yet (planned as an automatic step
+of the initial install once it's had more real-world use) and must be run
+explicitly, after `lsst_pipeline` (and optionally `lsst_custom_filters`) has
+already provisioned the shared install. It writes
+`lsst_install_dir/setup_env.sh`, which users source in their shell or batch
+job:
+
+```
+source /disk/groups/des/lsst_pipeline/v30_0_x/setup_env.sh
+```
+
+What the generated script does:
+
+- Sources `loadLSST.sh` and runs `setup lsst_distrib`.
+- Scans `lsst_install_dir/repos/` for any locally checked-out eups package
+  (anything with a `ups/` metadata directory - e.g. the `obs_decam`/`skymap`
+  checkouts from `lsst_custom_filters`) and `setup -j -r`'s each one, so
+  modified packages are preferred over the versions from `lsst_distrib`
+  without having to hardcode which packages exist. `eups setup -j -r` only
+  affects the current shell, which is why this has to be re-sourced in
+  every new shell/job rather than baked into the install once.
+- Sets `umask 0002` so new files/directories created in the shared butler
+  repo being processed (`butler ingest`, `pipetask run`, ...) stay group
+  read/write instead of only writable by their creator.
+
+**Not included yet**: pointing users at the butler repo itself (e.g.
+exporting `REPO`) - where that repo lives is still to be decided, so this
+script deliberately only handles the umask for now.
+
+The script is regenerated (not hand-edited) on each run of
+`prepare_env.yml`, so update `lsst_prepare_env_script_name` in
+`group_vars/all.yml` and re-run rather than editing it directly.

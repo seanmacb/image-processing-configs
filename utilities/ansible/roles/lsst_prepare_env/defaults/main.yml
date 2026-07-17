@@ -1,0 +1,9 @@
+---
+# This role is NOT part of site.yml. It generates a single "activate
+# everything" script on top of an existing lsst_pipeline install (uses
+# lsst_install_dir / lsst_shared_group from group_vars/all.yml), applied on
+# demand via prepare_env.yml.
+
+# Name of the generated script, written directly under lsst_install_dir so
+# it's easy to find and source: `source {{ lsst_install_dir }}/<name>`.
+lsst_prepare_env_script_name: "setup_env.sh"
