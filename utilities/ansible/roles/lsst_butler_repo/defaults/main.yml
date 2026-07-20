@@ -41,7 +41,10 @@ lsst_butler_repo_postgres_port: 5432
 lsst_butler_repo_postgres_db: "butler_testing"
 lsst_butler_repo_postgres_user: "testing_user"
 # Schema/namespace distinguishing this repo from others sharing the DB.
-lsst_butler_repo_postgres_namespace: "TESTING_physik"
+# Must be lowercase: daf_butler doesn't consistently quote it in the SQL
+# it generates, so a mixed-case value causes "schema ... does not exist"
+# errors once Postgres folds an unquoted reference to lowercase.
+lsst_butler_repo_postgres_namespace: "testing_physik"
 
 # Repo activation script this role writes to lsst_butler_repo_dir (sets
 # $REPO + umask; does not source the pipeline itself - see
