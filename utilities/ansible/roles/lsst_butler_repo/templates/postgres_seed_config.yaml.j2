@@ -1,5 +1,4 @@
 registry:
   # No password: authentication comes from ~/.pgpass on the target host
-  # (see lsst_butler_repo_postgres_host in defaults/main.yml).
   db: "postgresql://{{ lsst_butler_repo_postgres_user }}@{{ lsst_butler_repo_postgres_host }}:{{ lsst_butler_repo_postgres_port }}/{{ lsst_butler_repo_postgres_db }}"
   namespace: "{{ lsst_butler_repo_postgres_namespace }}"

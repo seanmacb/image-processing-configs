@@ -156,6 +156,8 @@ line up:
   separately, outside this ansible project) matching these host/port/db/
   user values — libpq reads it automatically for a connection string with
   no password.
+- `lsst_butler_repo_setup_script_name` — name of the repo activation script
+  written to `lsst_butler_repo_dir` (see "Repo activation script" below).
 
 What it does:
 
@@ -187,7 +189,50 @@ What it does:
   task each) because sourcing the pipeline environment is slow and Ansible
   gives every task its own fresh shell, so splitting it up would re-pay
   that cost per task.
+- Writes `lsst_butler_repo_dir/setup_repo.sh` (see "Repo activation script"
+  below).
 - Recursively fixes group ownership/permissions, same as `lsst_pipeline`.
+
+### Repo activation script
+
+Alongside the repo itself, this role writes
+`lsst_butler_repo_dir/setup_repo.sh` (name configurable via
+`lsst_butler_repo_setup_script_name`), which users source to work against
+this specific repo:
+
+```
+source /disk/groups/des/butler_repos/main/setup_repo.sh
+```
+
+What it does:
+
+- Checks that `butler` is already on `PATH` and fails (via `return`/`exit`,
+  so it's safe whether sourced or executed directly) with a clear message
+  if not, rather than silently exporting a `$REPO` that doesn't actually
+  work yet. It deliberately does **not** source any LSST Science Pipelines
+  stack itself — that stays a separate, user-driven step, consistent with
+  this role's independence from `lsst_pipeline`/`lsst_prepare_env` (see
+  "Butler repo" above). Source that pipeline's own activation script
+  first, then this one.
+- Exports `REPO` pointing at `lsst_butler_repo_dir`.
+- Sets `umask 0002`, same reasoning as `lsst_prepare_env`'s
+  `setup_env.sh` — this is a shared repo, so files/directories created in
+  it should stay group read/write.
+- *(only if the repo is Postgres-backed)* Checks that a `.pgpass` file
+  (`$PGPASSFILE`, or `~/.pgpass`) exists and has mode `0600` (libpq
+  silently ignores it otherwise), then tries an actual connection through
+  it with `psql` (falling back to a reachability-only check via
+  `pg_isready` if `psql` isn't installed, or skipping the check entirely if
+  neither is). Prints a clear warning — doesn't abort the source — pointing
+  at the missing/misconfigured `.pgpass` file if any of this fails, since
+  setting that file up is a separate, user-driven step this project doesn't
+  manage (see `lsst_butler_repo_postgres_host` above).
+
+Written once, when the repo is created — like the repo itself, it is not
+regenerated on a later run (`butler_repo.yml` refuses to touch an existing
+repo, see above), so update `lsst_butler_repo_setup_script_name` (or the
+template, `roles/lsst_butler_repo/templates/setup_repo.sh.j2`) before
+creating a repo, not after.
 
 ## Custom DECam filters (separate, opt-in role)
 

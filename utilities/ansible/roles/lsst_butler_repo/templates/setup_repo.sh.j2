@@ -1,0 +1,54 @@
+# Source this to activate the butler repo at {{ lsst_butler_repo_dir }} in
+# your current shell:
+#   source {{ lsst_butler_repo_dir }}/{{ lsst_butler_repo_setup_script_name }}
+
+
+
+# `butler` only exists on PATH once the pipeline's own activation script
+# has been sourced - check for it explicitly so a forgotten pipeline
+# sourcing step fails here, with a clear message, rather than later as a
+# confusing "butler: command not found" or, worse, silently exporting REPO
+# into a shell that can't actually use it.
+if ! command -v butler >/dev/null 2>&1; then
+    echo "$(basename "${BASH_SOURCE[0]:-setup_repo.sh}"): 'butler' not found on PATH - source the LSST Science Pipelines activation script first, then re-source this." >&2
+    return 1 2>/dev/null || exit 1
+fi
+
+export REPO="{{ lsst_butler_repo_dir }}"
+
+
+# This is a shared repo used by every {{ lsst_butler_repo_shared_group }}
+# member - keep files/directories created in it (butler ingest, pipetask
+# run, ...) group read/write instead of only writable by their creator.
+umask 0002
+
+
+{% if lsst_butler_repo_postgres_host %}
+# This repo's registry is Postgres-backed. Authentication comes from a
+# ~/.pgpass file on this host check it's actually present, correctly
+# permissioned, and that the database is reachable
+lsst_butler_repo_pgpass_file="${PGPASSFILE:-$HOME/.pgpass}"
+if [ ! -f "${lsst_butler_repo_pgpass_file}" ]; then
+    echo "$(basename "${BASH_SOURCE[0]:-setup_repo.sh}"): ${lsst_butler_repo_pgpass_file} not found - this repo needs a .pgpass entry for {{ lsst_butler_repo_postgres_user }}@{{ lsst_butler_repo_postgres_host }}:{{ lsst_butler_repo_postgres_port }}/{{ lsst_butler_repo_postgres_db }} to authenticate against Postgres." >&2
+else
+    lsst_butler_repo_pgpass_mode="$(stat -c '%a' "${lsst_butler_repo_pgpass_file}" 2>/dev/null || stat -f '%Lp' "${lsst_butler_repo_pgpass_file}" 2>/dev/null)"
+    if [ "${lsst_butler_repo_pgpass_mode}" != "600" ]; then
+        echo "$(basename "${BASH_SOURCE[0]:-setup_repo.sh}"): ${lsst_butler_repo_pgpass_file} exists but has mode ${lsst_butler_repo_pgpass_mode}, not 600 - libpq silently ignores a .pgpass file with looser permissions. Run: chmod 600 ${lsst_butler_repo_pgpass_file}" >&2
+    elif command -v psql >/dev/null 2>&1; then
+        # Actually exercises the .pgpass lookup+authentication, not just
+        # reachability - psql reads PGPASSFILE/~/.pgpass itself when no
+        # password is given on the connection string.
+        if ! PGPASSFILE="${lsst_butler_repo_pgpass_file}" psql "postgresql://{{ lsst_butler_repo_postgres_user }}@{{ lsst_butler_repo_postgres_host }}:{{ lsst_butler_repo_postgres_port }}/{{ lsst_butler_repo_postgres_db }}" -tAc 'select 1' >/dev/null 2>&1; then
+            echo "$(basename "${BASH_SOURCE[0]:-setup_repo.sh}"): could not connect to Postgres at {{ lsst_butler_repo_postgres_host }}:{{ lsst_butler_repo_postgres_port }}/{{ lsst_butler_repo_postgres_db }} as {{ lsst_butler_repo_postgres_user }} using ${lsst_butler_repo_pgpass_file} - check the .pgpass entry (host:port:db:user:password) and network connectivity." >&2
+        fi
+    elif command -v pg_isready >/dev/null 2>&1; then
+        # psql isn't available - fall back to a reachability-only check
+        # (pg_isready doesn't authenticate, so this can't catch a wrong
+        # .pgpass entry, only a completely unreachable server).
+        if ! pg_isready -h "{{ lsst_butler_repo_postgres_host }}" -p "{{ lsst_butler_repo_postgres_port }}" -d "{{ lsst_butler_repo_postgres_db }}" -U "{{ lsst_butler_repo_postgres_user }}" >/dev/null 2>&1; then
+            echo "$(basename "${BASH_SOURCE[0]:-setup_repo.sh}"): Postgres at {{ lsst_butler_repo_postgres_host }}:{{ lsst_butler_repo_postgres_port }} is not reachable - check network connectivity (note: this check does not verify ${lsst_butler_repo_pgpass_file} authentication, install psql for that)." >&2
+        fi
+    fi
+fi
+unset lsst_butler_repo_pgpass_file lsst_butler_repo_pgpass_mode
+{% endif %}

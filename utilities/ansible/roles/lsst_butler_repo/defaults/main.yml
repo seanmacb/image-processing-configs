@@ -58,3 +58,12 @@ lsst_butler_repo_postgres_user: ""
 # repos sharing the same database. Required by butler when the registry
 # backend is Postgres; left empty here since there's no safe default.
 lsst_butler_repo_postgres_namespace: ""
+
+# Name of the repo activation script this role writes to lsst_butler_repo_dir
+# when it creates the repo (source {{ lsst_butler_repo_dir }}/<name>). Sets
+# $REPO and the shared-write umask, and - deliberately - does not source any
+# LSST Science Pipelines stack itself (that stays a separate, user-driven
+# step, consistent with this role's independence from lsst_pipeline/
+# lsst_prepare_env, see the top of this file); it only checks that `butler`
+# is already on PATH.
+lsst_butler_repo_setup_script_name: "setup_repo.sh"

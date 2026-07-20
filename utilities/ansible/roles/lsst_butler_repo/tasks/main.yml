@@ -71,6 +71,13 @@
     state: absent
   when: lsst_butler_repo_postgres_host | length > 0
 
+- name: Write the repo activation script
+  ansible.builtin.template:
+    src: setup_repo.sh.j2
+    dest: "{{ lsst_butler_repo_dir }}/{{ lsst_butler_repo_setup_script_name }}"
+    mode: "0664"
+    group: "{{ lsst_butler_repo_shared_group }}"
+
 - name: Ensure the butler repo is owned by the shared group
   ansible.builtin.command:
     cmd: "chgrp -R {{ lsst_butler_repo_shared_group }} {{ lsst_butler_repo_dir }}"
