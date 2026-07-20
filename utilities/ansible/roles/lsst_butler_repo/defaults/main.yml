@@ -3,7 +3,7 @@
 # see lsst_butler_repo_pipeline_dir below. Not part of site.yml, applied
 # via butler_repo.yml.
 
-lsst_butler_repo_dir: "/disk/gfs_grpdata/des/image_pipeline_repos/_testing/johwue/"
+lsst_butler_repo_dir: "/disk/gfs_grpdata/des/image_pipeline_repos/TESTING/"
 
 # ansible_user must already be a member of this group on the target host.
 lsst_butler_repo_shared_group: "des"
@@ -36,12 +36,12 @@ lsst_butler_repo_skymaps:
 # is actually created (registry backend can't change afterwards). No
 # password var: auth comes from a ~/.pgpass file on the target host
 # (set up separately) matching host/port/db/user below.
-lsst_butler_repo_postgres_host: "172.23.211.243"
+lsst_butler_repo_postgres_host: "<IP>"
 lsst_butler_repo_postgres_port: 5432
-lsst_butler_repo_postgres_db: ""
-lsst_butler_repo_postgres_user: ""
+lsst_butler_repo_postgres_db: "butler_testing"
+lsst_butler_repo_postgres_user: "testing_user"
 # Schema/namespace distinguishing this repo from others sharing the DB.
-lsst_butler_repo_postgres_namespace: ""
+lsst_butler_repo_postgres_namespace: "TESTING_physik"
 
 # Repo activation script this role writes to lsst_butler_repo_dir (sets
 # $REPO + umask; does not source the pipeline itself - see
