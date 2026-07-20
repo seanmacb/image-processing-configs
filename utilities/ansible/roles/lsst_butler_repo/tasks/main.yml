@@ -6,6 +6,24 @@
     group: "{{ lsst_butler_repo_shared_group }}"
     mode: "2775"
 
+# Only used the very first time (butler create is what reads it, guarded by
+# the same butler.yaml check as below - the registry backend can't be
+# changed after creation). Written ahead of the env-sourcing task below as
+# its own tasks since writing a file doesn't need the LSST stack sourced.
+- name: Create a temp file for the Postgres seed config
+  ansible.builtin.tempfile:
+    state: file
+    suffix: .yaml
+  register: lsst_butler_repo_postgres_seed_config
+  when: lsst_butler_repo_postgres_host | length > 0
+
+- name: Write the Postgres seed config for the butler repo
+  ansible.builtin.template:
+    src: postgres_seed_config.yaml.j2
+    dest: "{{ lsst_butler_repo_postgres_seed_config.path }}"
+    mode: "0600"
+  when: lsst_butler_repo_postgres_host | length > 0
+
 # Sourcing the pipeline's activation script is slow, so this deliberately
 # does everything that needs it (create + register-instrument) in one shell
 # task rather than one task each - Ansible gives every task a fresh shell,
@@ -18,7 +36,11 @@
     # butler create refuses to reuse a directory that already has a
     # butler.yaml in it, so that file is the natural idempotency guard.
     if [ ! -f "{{ lsst_butler_repo_dir }}/butler.yaml" ]; then
+        {% if lsst_butler_repo_postgres_host %}
+        butler create "{{ lsst_butler_repo_dir }}" --seed-config "{{ lsst_butler_repo_postgres_seed_config.path }}"
+        {% else %}
         butler create "{{ lsst_butler_repo_dir }}"
+        {% endif %}
     fi
     # --update makes each of these idempotent: without it, a second run
     # fails once an instrument is already registered instead of being a
@@ -29,6 +51,12 @@
   args:
     executable: /bin/bash
   changed_when: true
+
+- name: Remove the temp Postgres seed config
+  ansible.builtin.file:
+    path: "{{ lsst_butler_repo_postgres_seed_config.path }}"
+    state: absent
+  when: lsst_butler_repo_postgres_host | length > 0
 
 - name: Ensure the butler repo is owned by the shared group
   ansible.builtin.command:

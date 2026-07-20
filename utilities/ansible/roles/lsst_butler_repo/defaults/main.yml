@@ -34,3 +34,27 @@ lsst_butler_repo_prepare_env_script_name: "setup_env.sh"
 # to skip instrument registration entirely.
 lsst_butler_repo_instrument_classes:
   - "lsst.obs.decam.DarkEnergyCamera"
+
+# Optional Postgres registry backend for the butler repo. If
+# lsst_butler_repo_postgres_host is non-empty, `butler create` is seeded
+# with a config pointing its registry at this Postgres database instead of
+# the default embedded SQLite registry - the registry backend can't be
+# changed after creation, so this only takes effect the first time (i.e.
+# it's ignored once lsst_butler_repo_dir/butler.yaml already exists). Leave
+# lsst_butler_repo_postgres_host empty (the default) to fall back to
+# SQLite.
+#
+# No password here on purpose: authentication is expected to come from a
+# ~/.pgpass file on the target host (set up separately, outside this
+# ansible project) matching lsst_butler_repo_postgres_host/_port/_db/_user
+# - libpq picks it up automatically for a connection string with no
+# password, which is what the connection string built from these vars
+# ends up being.
+lsst_butler_repo_postgres_host: ""
+lsst_butler_repo_postgres_port: 5432
+lsst_butler_repo_postgres_db: ""
+lsst_butler_repo_postgres_user: ""
+# Namespace/schema Postgres registries use to distinguish multiple butler
+# repos sharing the same database. Required by butler when the registry
+# backend is Postgres; left empty here since there's no safe default.
+lsst_butler_repo_postgres_namespace: ""

@@ -146,20 +146,36 @@ line up:
   `lsst_prepare_env`-generated `setup_env.sh` to already exist there, so run
   after `lsst_pipeline`/`prepare_env.yml` have provisioned it — but not
   necessarily the same install `site.yml` in this project manages).
+- `lsst_butler_repo_postgres_host` (and `_port`/`_db`/`_user`/
+  `_namespace`) — optional Postgres registry backend. Leave
+  `lsst_butler_repo_postgres_host` empty (the default) to fall back to the
+  embedded SQLite registry `butler create` uses with no seed config. The
+  registry backend can't be changed after creation, so this only has any
+  effect the first time the repo is created. No password var here: auth is
+  expected to come from a `~/.pgpass` file on the target host (set up
+  separately, outside this ansible project) matching these host/port/db/
+  user values — libpq reads it automatically for a connection string with
+  no password.
 
 What it does:
 
 - Creates `lsst_butler_repo_dir`, owned by `lsst_butler_repo_shared_group`
   with the setgid bit, same pattern as `lsst_install_dir`.
+- *(only if `lsst_butler_repo_postgres_host` is set)* Writes a Postgres seed
+  config (`registry.db`/`registry.namespace`) to a remote temp file, which
+  `butler create` below is pointed at via `--seed-config`, then deletes the
+  temp file afterwards. This doesn't need the pipeline environment sourced,
+  so it's its own task rather than folded into the one below.
 - Sources the activation script once, then in that same shell: runs `butler
   create` (skipped if a `butler.yaml` is already there) and registers each
   instrument listed in `lsst_butler_repo_instrument_classes` (defaults to
   just `lsst.obs.decam.DarkEnergyCamera`) with `--update`, so re-running is
   a no-op instead of failing on an already-registered instrument. Set
   `lsst_butler_repo_instrument_classes: []` to skip registration entirely.
-  All combined into one task (not one task each) because sourcing the
-  pipeline environment is slow and Ansible gives every task its own fresh
-  shell, so splitting it up would re-pay that cost per task.
+  `butler create`/`register-instrument` are combined into one task (not one
+  task each) because sourcing the pipeline environment is slow and Ansible
+  gives every task its own fresh shell, so splitting it up would re-pay
+  that cost per task.
 - Recursively fixes group ownership/permissions, same as `lsst_pipeline`.
 
 ## Custom DECam filters (separate, opt-in role)
