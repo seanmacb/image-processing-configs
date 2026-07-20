@@ -38,7 +38,7 @@
 
 # Combined into one task: sourcing the pipeline env is slow and each task
 # gets its own fresh shell, so splitting this up would re-pay that cost.
-- name: Create the butler repo, register instruments and skymaps (env sourced once)
+- name: Create the butler repo, register instruments, curated calibrations and skymaps (env sourced once)
   ansible.builtin.shell: |
     set -eo pipefail
     source "{{ lsst_butler_repo_pipeline_dir }}/{{ lsst_butler_repo_prepare_env_script_name }}"
@@ -53,6 +53,9 @@
     {% endfor %}
     {% for skymap in lsst_butler_repo_skymaps %}
     butler register-skymap "{{ lsst_butler_repo_dir }}" -C "{{ skymap.config }}" -c name="{{ skymap.name }}"
+    {% endfor %}
+    {% for instrument_class in lsst_butler_repo_curated_calibration_instruments %}
+    butler write-curated-calibrations "{{ lsst_butler_repo_dir }}" {{ instrument_class }}
     {% endfor %}
   args:
     executable: /bin/bash

@@ -17,9 +17,14 @@ lsst_butler_repo_prepare_env_script_name: "setup_env.sh"
 lsst_butler_repo_instrument_classes:
   - "lsst.obs.decam.DarkEnergyCamera"
 
-# Registered in this order, after the instruments above. Each needs a
-# `name` (-c name=...) and `config` (-C ..., e.g. $OBS_DECAM_DIR/config/
-# makeSkyMap.py once obs_decam is set up). Set to [] to skip.
+# write-curated-calibrations run for each, right after the instruments
+# above. Set to [] to skip.
+lsst_butler_repo_curated_calibration_instruments:
+  - "lsst.obs.decam.DarkEnergyCamera"
+
+# Registered in this order, after the curated calibrations above. Each
+# needs a `name` (-c name=...) and `config` (-C ..., e.g. $OBS_DECAM_DIR/
+# config/makeSkyMap.py once obs_decam is set up). Set to [] to skip.
 lsst_butler_repo_skymaps:
   - name: "decam_rings_v1"
     config: "$OBS_DECAM_DIR/config/makeSkyMap.py"

@@ -138,6 +138,8 @@ target any LSST stack install, not just the one `lsst_install_dir` names.
   — which install's `setup_env.sh` to source before running `butler`.
 - `lsst_butler_repo_instrument_classes` — instruments registered right
   after `butler create` (`register-instrument ... --update`). `[]` to skip.
+- `lsst_butler_repo_curated_calibration_instruments` — instruments run
+  through `write-curated-calibrations` right after that. `[]` to skip.
 - `lsst_butler_repo_skymaps` — skymaps registered after that
   (`register-skymap ... -C <config> -c name=<name>`), each a `{name,
   config}` pair. `[]` to skip.
@@ -156,15 +158,16 @@ What it does:
 - **Fails if `lsst_butler_repo_dir` isn't empty.** This role only creates
   brand new repos and never touches an existing one — re-running
   `butler_repo.yml` against an already-created repo is an error, not a
-  no-op. Register a new instrument/skymap on an existing repo by hand
-  instead (`butler register-instrument ... --update` /
-  `register-skymap ...`).
+  no-op. Register a new instrument/curated calibration/skymap on an
+  existing repo by hand instead (`butler register-instrument ... --update`
+  / `write-curated-calibrations ...` / `register-skymap ...`).
 - *(Postgres only)* Writes a seed config to a remote temp file and points
   `butler create` at it via `--seed-config`, then removes the temp file.
 - Sources the activation script once, then in that same shell: `butler
-  create`, `register-instrument --update` for each instrument, and
-  `register-skymap` for each skymap — combined into one task since
-  sourcing the pipeline env is slow and every task gets its own shell.
+  create`, `register-instrument --update` for each instrument,
+  `write-curated-calibrations` for each of those same instruments, and
+  `register-skymap` for each skymap — combined into one task since sourcing
+  the pipeline env is slow and every task gets its own shell.
 - Writes `lsst_butler_repo_dir/setup_repo.sh` (see below).
 - Recursively fixes group ownership/permissions, same as `lsst_pipeline`.
 
