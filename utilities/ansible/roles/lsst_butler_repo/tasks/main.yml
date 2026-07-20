@@ -13,13 +13,7 @@
     hidden: true
   register: lsst_butler_repo_dir_contents
 
-# This role only ever creates a brand new repo - by design, it must never
-# touch an existing one (no re-running butler create/register-instrument
-# against it, no permission fixups). If lsst_butler_repo_dir already has
-# anything in it (normally butler.yaml from a previous run, but this check
-# isn't specific to that), fail loudly instead of silently no-op'ing, so a
-# repo pointed at by mistake at pre-existing/unrelated data is never
-# assumed safe to proceed against either.
+# This role only ever creates a brand new repo, never touches an existing one.
 - name: Fail if the butler repo directory already has content
   ansible.builtin.fail:
     msg: >-
@@ -28,8 +22,6 @@
       creates brand new repos and never touches an existing one.
   when: lsst_butler_repo_dir_contents.matched > 0
 
-# Written ahead of the env-sourcing task below as its own task since
-# writing a file doesn't need the LSST stack sourced.
 - name: Create a temp file for the Postgres seed config
   ansible.builtin.tempfile:
     state: file
@@ -44,11 +36,9 @@
     mode: "0600"
   when: lsst_butler_repo_postgres_host | length > 0
 
-# Sourcing the pipeline's activation script is slow, so this deliberately
-# does everything that needs it (create + register-instrument) in one shell
-# task rather than one task each - Ansible gives every task a fresh shell,
-# so splitting this up would re-source (and re-pay that cost) per task.
-- name: Create the butler repo and register the instrument (env sourced once)
+# Combined into one task: sourcing the pipeline env is slow and each task
+# gets its own fresh shell, so splitting this up would re-pay that cost.
+- name: Create the butler repo, register instruments and skymaps (env sourced once)
   ansible.builtin.shell: |
     set -eo pipefail
     source "{{ lsst_butler_repo_pipeline_dir }}/{{ lsst_butler_repo_prepare_env_script_name }}"
@@ -60,6 +50,9 @@
     {% endif %}
     {% for instrument_class in lsst_butler_repo_instrument_classes %}
     butler register-instrument "{{ lsst_butler_repo_dir }}" {{ instrument_class }} --update
+    {% endfor %}
+    {% for skymap in lsst_butler_repo_skymaps %}
+    butler register-skymap "{{ lsst_butler_repo_dir }}" -C "{{ skymap.config }}" -c name="{{ skymap.name }}"
     {% endfor %}
   args:
     executable: /bin/bash

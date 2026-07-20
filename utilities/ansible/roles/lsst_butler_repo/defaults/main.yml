@@ -1,69 +1,42 @@
 ---
-# This role is deliberately independent of the other roles in this project
-# (lsst_pipeline / lsst_prepare_env / lsst_custom_filters) and their
-# group_vars/all.yml entries - it only needs an existing LSST stack install
-# somewhere to source its activation script from, defined below via
-# lsst_butler_repo_pipeline_dir rather than reusing lsst_install_dir. That
-# lets this role be pointed at a differently-configured/managed install
-# without any of this project's other vars needing to line up with it. Not
-# part of site.yml - applied on demand via butler_repo.yml.
+# Independent of lsst_pipeline/lsst_prepare_env and group_vars/all.yml -
+# see lsst_butler_repo_pipeline_dir below. Not part of site.yml, applied
+# via butler_repo.yml.
 
-# Directory on the target server where the butler repo gets created. Not in
-# group_vars/all.yml on purpose, see above.
-lsst_butler_repo_dir: "/disk/groups/des/butler_repos/main"
+lsst_butler_repo_dir: "/disk/gfs_grpdata/des/image_pipeline_repos/_testing/johwue/"
 
-# Linux group that should have shared read/write access to
-# lsst_butler_repo_dir. The ansible_user for each host must already be a
-# member of this group on the target host.
+# ansible_user must already be a member of this group on the target host.
 lsst_butler_repo_shared_group: "des"
 
-# Directory of the LSST Science Pipelines install to source before running
-# butler commands against this repo. Independent of lsst_install_dir
-# (group_vars/all.yml, used by lsst_pipeline/lsst_prepare_env) - set this to
-# wherever an lsst_prepare_env-generated activation script actually lives.
+# Install to source before running butler commands - independent of
+# lsst_install_dir so this role isn't tied to the install site.yml manages.
 lsst_butler_repo_pipeline_dir: "/disk/groups/des/lsst_pipeline/v30_0_x"
-
-# Name of the activation script (as written by lsst_prepare_env) to source
-# from lsst_butler_repo_pipeline_dir.
 lsst_butler_repo_prepare_env_script_name: "setup_env.sh"
 
-# Instruments to register right after creating the repo (in this order,
-# all in the same sourced shell as `butler create` - see tasks/main.yml).
-# A fresh butler repo has no instrument dimension records at all, so this
-# is needed before any real ingest/processing against it. Set to []
-# to skip instrument registration entirely.
+# Registered in this order right after `butler create`. Set to [] to skip.
 lsst_butler_repo_instrument_classes:
   - "lsst.obs.decam.DarkEnergyCamera"
 
-# Optional Postgres registry backend for the butler repo. If
-# lsst_butler_repo_postgres_host is non-empty, `butler create` is seeded
-# with a config pointing its registry at this Postgres database instead of
-# the default embedded SQLite registry - the registry backend can't be
-# changed after creation, so this only takes effect the first time (i.e.
-# it's ignored once lsst_butler_repo_dir/butler.yaml already exists). Leave
-# lsst_butler_repo_postgres_host empty (the default) to fall back to
-# SQLite.
-#
-# No password here on purpose: authentication is expected to come from a
-# ~/.pgpass file on the target host (set up separately, outside this
-# ansible project) matching lsst_butler_repo_postgres_host/_port/_db/_user
-# - libpq picks it up automatically for a connection string with no
-# password, which is what the connection string built from these vars
-# ends up being.
-lsst_butler_repo_postgres_host: ""
+# Registered in this order, after the instruments above. Each needs a
+# `name` (-c name=...) and `config` (-C ..., e.g. $OBS_DECAM_DIR/config/
+# makeSkyMap.py once obs_decam is set up). Set to [] to skip.
+lsst_butler_repo_skymaps:
+  - name: "decam_rings_v1"
+    config: "$OBS_DECAM_DIR/config/makeSkyMap.py"
+
+# Optional Postgres registry backend - leave lsst_butler_repo_postgres_host
+# empty (default) to fall back to SQLite. Only takes effect when the repo
+# is actually created (registry backend can't change afterwards). No
+# password var: auth comes from a ~/.pgpass file on the target host
+# (set up separately) matching host/port/db/user below.
+lsst_butler_repo_postgres_host: "172.23.211.243"
 lsst_butler_repo_postgres_port: 5432
 lsst_butler_repo_postgres_db: ""
 lsst_butler_repo_postgres_user: ""
-# Namespace/schema Postgres registries use to distinguish multiple butler
-# repos sharing the same database. Required by butler when the registry
-# backend is Postgres; left empty here since there's no safe default.
+# Schema/namespace distinguishing this repo from others sharing the DB.
 lsst_butler_repo_postgres_namespace: ""
 
-# Name of the repo activation script this role writes to lsst_butler_repo_dir
-# when it creates the repo (source {{ lsst_butler_repo_dir }}/<name>). Sets
-# $REPO and the shared-write umask, and - deliberately - does not source any
-# LSST Science Pipelines stack itself (that stays a separate, user-driven
-# step, consistent with this role's independence from lsst_pipeline/
-# lsst_prepare_env, see the top of this file); it only checks that `butler`
-# is already on PATH.
+# Repo activation script this role writes to lsst_butler_repo_dir (sets
+# $REPO + umask; does not source the pipeline itself - see
+# templates/setup_repo.sh.j2).
 lsst_butler_repo_setup_script_name: "setup_repo.sh"
