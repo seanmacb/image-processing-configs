@@ -161,16 +161,27 @@ What it does:
 
 - Creates `lsst_butler_repo_dir`, owned by `lsst_butler_repo_shared_group`
   with the setgid bit, same pattern as `lsst_install_dir`.
-- *(only if `lsst_butler_repo_postgres_host` is set)* Writes a Postgres seed
-  config (`registry.db`/`registry.namespace`) to a remote temp file, which
-  `butler create` below is pointed at via `--seed-config`, then deletes the
-  temp file afterwards. This doesn't need the pipeline environment sourced,
-  so it's its own task rather than folded into the one below.
-- Sources the activation script once, then in that same shell: runs `butler
-  create` (skipped if a `butler.yaml` is already there) and registers each
-  instrument listed in `lsst_butler_repo_instrument_classes` (defaults to
-  just `lsst.obs.decam.DarkEnergyCamera`) with `--update`, so re-running is
-  a no-op instead of failing on an already-registered instrument. Set
+- Checks whether `lsst_butler_repo_dir` is empty. **This role only ever
+  creates a brand new repo and refuses to touch an existing one**: if
+  there's anything already in that directory (normally `butler.yaml` from
+  a previous run, but this check isn't specific to that), the play
+  **fails** right there with an explicit error instead of silently
+  no-op'ing or, worse, running `butler create`/`register-instrument`
+  against it. Re-running `butler_repo.yml` against an already-created repo
+  is therefore an error, not a no-op - registering an instrument on an
+  existing repo needs `butler register-instrument ... --update` run by
+  hand instead (see "Custom DECam filters" below for the DECam-specific
+  case).
+- *(only if `lsst_butler_repo_postgres_host` is set)* Writes a Postgres
+  seed config (`registry.db`/`registry.namespace`) to a remote temp file,
+  which `butler create` below is pointed at via `--seed-config`, then
+  deletes the temp file afterwards. This doesn't need the pipeline
+  environment sourced, so it's its own task rather than folded into the
+  one below.
+- Sources the activation script once, then in that same shell: runs
+  `butler create` and registers each instrument listed in
+  `lsst_butler_repo_instrument_classes` (defaults to just
+  `lsst.obs.decam.DarkEnergyCamera`) with `--update`. Set
   `lsst_butler_repo_instrument_classes: []` to skip registration entirely.
   `butler create`/`register-instrument` are combined into one task (not one
   task each) because sourcing the pipeline environment is slow and Ansible
@@ -232,9 +243,11 @@ What it does:
 repo. `lsst_butler_repo` (see "Butler repo" above) registers
 `lsst.obs.decam.DarkEnergyCamera` for you when it creates a repo, but that
 happens before any custom filters exist yet, so it won't know about them.
-After running `custom_filters.yml`, re-register by hand (or re-run
-`butler_repo.yml`, which does the same `--update` call) against each repo
-that needs the new filters:
+`butler_repo.yml` only ever runs repo creation/registration once (it's a
+no-op against an already-created repo, see "Butler repo" above), so
+re-running it won't pick up filters added later either. After running
+`custom_filters.yml`, re-register by hand against each repo that needs the
+new filters:
 
 ```
 butler register-instrument <REPO> lsst.obs.decam.DarkEnergyCamera --update
@@ -277,10 +290,8 @@ not just present in the edited source files:
   through ansible at all.
 
 This does **not** check or update any *existing* real butler repo - see
-"Not included" above. After adding a new filter, re-register it against
-each real repo that needs it - either by hand (see above) or by re-running
-`butler_repo.yml` (see "Butler repo" above), which does the same
-`--update` call.
+"Not included" above. After adding a new filter, re-register it by hand
+(see above) against each real repo that needs it.
 
 
 ## Environment activation script
