@@ -24,43 +24,58 @@ on a remote server.
 
 ## Run
 
-1. Install the shared pipeline stack (creates `lsst_install_dir`, runs
-   `lsstinstall`/`eups distrib install`, writes `setup_env.sh`):
+Install the shared pipeline stack (creates `lsst_install_dir`, runs
+`lsstinstall`/`eups distrib install`, writes `setup_env.sh`):
 
-   ```
-   ansible-playbook site.yml -v
-   ```
+```
+ansible-playbook site.yml -v
+```
 
-   `-v` shows the stdout/stderr of each command (`lsstinstall`, `eups distrib
-   install`, the demo run), which is hidden otherwise — drop it for quieter
-   output.
+`-v` shows the stdout/stderr of each command (`lsstinstall`, `eups distrib
+install`, the demo run), which is hidden otherwise — drop it for quieter
+output.
 
-   All steps are idempotent (guarded with `creates:`/marker files), so
-   re-running the playbook only performs work that hasn't happened yet,
-   except the demo smoke test, which always re-runs when enabled.
+All steps are idempotent (guarded with `creates:`/marker files), so
+re-running the playbook only performs work that hasn't happened yet, except
+the demo smoke test, which always re-runs when enabled.
 
-2. *(optional)* Register custom DECam filters on top of the shared stack —
-   see "Custom DECam filters" below:
+Everything below is optional and separate from this install — run it
+afterwards, once the shared stack above is in place:
 
-   ```
-   ansible-playbook custom_filters.yml
-   ```
+- Register custom DECam filters on top of the shared stack — see "Custom
+  DECam filters" below:
 
-3. *(optional)* Verify the custom filters registered correctly — see
-   "Verifying the custom filters" below:
+  ```
+  ansible-playbook custom_filters.yml -v
+  ```
 
-   ```
-   ansible-playbook custom_filters_verify.yml
-   ```
+- Verify the custom filters registered correctly — see "Verifying the
+  custom filters" below (run after `custom_filters.yml`):
+
+  ```
+  ansible-playbook custom_filters_verify.yml -v
+  ```
+
+- Create a butler repo in its own location — see "Butler repo" below:
+
+  ```
+  ansible-playbook butler_repo.yml -v
+  ```
+
 
 ## Note: SSH on `linux.physik.uzh.ch` hosts
 
 These hosts require a second, silent `keyboard-interactive` auth step after
 the certificate, which Ansible disables by default. Run with a dummy
-password to enable it (needs `sshpass` installed: `sudo apt install sshpass`):
+password to enable it (needs `sshpass` installed: `sudo apt install sshpass`).
+This applies to **every** playbook in this project, not just `site.yml`:
 
 ```
 ansible-playbook site.yml -e ansible_ssh_pass=x -v
+ansible-playbook custom_filters.yml -e ansible_ssh_pass=x -v
+ansible-playbook custom_filters_verify.yml -e ansible_ssh_pass=x -v
+
+ansible-playbook butler_repo.yml -e ansible_ssh_pass=x -v
 ```
 
 ## Troubleshooting
@@ -103,6 +118,49 @@ rm -rf <lsst_install_dir>/lsst_stack/conda/envs/lsst-scipipe-<version>
 - Writes `lsst_install_dir/setup_env.sh` (see "Environment activation
   script" below), a single script users source to fully activate the
   environment.
+
+
+## Butler repo (separate, opt-in role)
+
+Creates and initializes a butler repo. Applied via its own playbook:
+
+```
+ansible-playbook butler_repo.yml
+```
+
+This role is deliberately independent of `lsst_pipeline`/`lsst_prepare_env`
+and their `group_vars/all.yml` entries — all of its config lives in its own
+role defaults (`roles/lsst_butler_repo/defaults/main.yml`), not
+`group_vars/all.yml`, so it can be pointed at any LSST stack install (not
+necessarily the one `lsst_install_dir` names) without other vars needing to
+line up:
+
+- `lsst_butler_repo_dir` — where the repo gets created (independent of
+  `lsst_install_dir` — a repo should be able to outlive a given pipeline
+  version, so it isn't created automatically by `site.yml`).
+- `lsst_butler_repo_shared_group` — Linux group for shared read/write
+  access to it.
+- `lsst_butler_repo_pipeline_dir` /
+  `lsst_butler_repo_prepare_env_script_name` — which install's activation
+  script to source before running `butler` commands (needs an
+  `lsst_prepare_env`-generated `setup_env.sh` to already exist there, so run
+  after `lsst_pipeline`/`prepare_env.yml` have provisioned it — but not
+  necessarily the same install `site.yml` in this project manages).
+
+What it does:
+
+- Creates `lsst_butler_repo_dir`, owned by `lsst_butler_repo_shared_group`
+  with the setgid bit, same pattern as `lsst_install_dir`.
+- Sources the activation script once, then in that same shell: runs `butler
+  create` (skipped if a `butler.yaml` is already there) and registers each
+  instrument listed in `lsst_butler_repo_instrument_classes` (defaults to
+  just `lsst.obs.decam.DarkEnergyCamera`) with `--update`, so re-running is
+  a no-op instead of failing on an already-registered instrument. Set
+  `lsst_butler_repo_instrument_classes: []` to skip registration entirely.
+  All combined into one task (not one task each) because sourcing the
+  pipeline environment is slow and Ansible gives every task its own fresh
+  shell, so splitting it up would re-pay that cost per task.
+- Recursively fixes group ownership/permissions, same as `lsst_pipeline`.
 
 ## Custom DECam filters (separate, opt-in role)
 
@@ -154,10 +212,17 @@ What it does:
   are recognized by a butler registry - see "Verifying the custom filters"
   below, which runs this same script.
 
-**Not included** (needs a butler repo that doesn't exist in this ansible
-setup yet): `butler register-instrument $REPO lsst.obs.decam.DarkEnergyCamera
---update`. Run that manually, once, against each butler repo after this role
-has run and after the repo exists.
+**Not included**: registering these custom filters against a real butler
+repo. `lsst_butler_repo` (see "Butler repo" above) registers
+`lsst.obs.decam.DarkEnergyCamera` for you when it creates a repo, but that
+happens before any custom filters exist yet, so it won't know about them.
+After running `custom_filters.yml`, re-register by hand (or re-run
+`butler_repo.yml`, which does the same `--update` call) against each repo
+that needs the new filters:
+
+```
+butler register-instrument <REPO> lsst.obs.decam.DarkEnergyCamera --update
+```
 
 **Worth checking before relying on this**: the upstream anchor lines this
 role edits around (`config.filterMap = {` in `filterMap.py`, the narrow-band
@@ -196,10 +261,10 @@ not just present in the edited source files:
   through ansible at all.
 
 This does **not** check or update any *existing* real butler repo - see
-"Not included" above; this project doesn't track any butler repo path, so
-there's nothing here to discover and re-register automatically. After
-adding a new filter, remember to run `register-instrument --update`
-yourself against each real repo that needs it.
+"Not included" above. After adding a new filter, re-register it against
+each real repo that needs it - either by hand (see above) or by re-running
+`butler_repo.yml` (see "Butler repo" above), which does the same
+`--update` call.
 
 
 ## Environment activation script
@@ -229,9 +294,9 @@ What the generated script does:
   repo being processed (`butler ingest`, `pipetask run`, ...) stay group
   read/write instead of only writable by their creator.
 
-**Not included yet**: pointing users at the butler repo itself (e.g.
-exporting `REPO`) - where that repo lives is still to be decided, so this
-script deliberately only handles the umask for now.
+**Not included**: pointing users at a butler repo itself (e.g. exporting
+`REPO`) - `lsst_butler_repo` (see "Butler repo" above) is deliberately
+independent of this role/script, so it doesn't wire into it automatically.
 
 The script is regenerated (not hand-edited) on each run of
 `prepare_env.yml`, so update `lsst_prepare_env_script_name` in

@@ -1,0 +1,11 @@
+---
+# Not included in site.yml on purpose - creates/initializes a butler repo in
+# a location independent of lsst_install_dir. Run explicitly, after
+# lsst_pipeline has already provisioned the shared stack:
+#   ansible-playbook butler_repo.yml
+- name: Create and initialize a butler repo for the shared pipeline install
+  hosts: lsst_servers
+  gather_facts: true
+
+  roles:
+    - lsst_butler_repo

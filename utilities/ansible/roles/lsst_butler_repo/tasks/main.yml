@@ -1,0 +1,45 @@
+---
+- name: Ensure butler repo directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_butler_repo_dir }}"
+    state: directory
+    group: "{{ lsst_butler_repo_shared_group }}"
+    mode: "2775"
+
+# Sourcing the pipeline's activation script is slow, so this deliberately
+# does everything that needs it (create + register-instrument) in one shell
+# task rather than one task each - Ansible gives every task a fresh shell,
+# so splitting this up would re-source (and re-pay that cost) per task.
+- name: Create the butler repo and register the instrument (env sourced once)
+  ansible.builtin.shell: |
+    set -eo pipefail
+    source "{{ lsst_butler_repo_pipeline_dir }}/{{ lsst_butler_repo_prepare_env_script_name }}"
+
+    # butler create refuses to reuse a directory that already has a
+    # butler.yaml in it, so that file is the natural idempotency guard.
+    if [ ! -f "{{ lsst_butler_repo_dir }}/butler.yaml" ]; then
+        butler create "{{ lsst_butler_repo_dir }}"
+    fi
+    # --update makes each of these idempotent: without it, a second run
+    # fails once an instrument is already registered instead of being a
+    # no-op.
+    {% for instrument_class in lsst_butler_repo_instrument_classes %}
+    butler register-instrument "{{ lsst_butler_repo_dir }}" {{ instrument_class }} --update
+    {% endfor %}
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Ensure the butler repo is owned by the shared group
+  ansible.builtin.command:
+    cmd: "chgrp -R {{ lsst_butler_repo_shared_group }} {{ lsst_butler_repo_dir }}"
+  changed_when: false
+
+- name: Ensure group read/write and setgid propagation across the butler repo
+  ansible.builtin.shell: |
+    set -euo pipefail
+    chmod -R g+rwX "{{ lsst_butler_repo_dir }}"
+    find "{{ lsst_butler_repo_dir }}" -type d -exec chmod g+s {} +
+  args:
+    executable: /bin/bash
+  changed_when: false
