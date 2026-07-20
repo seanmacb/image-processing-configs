@@ -18,9 +18,11 @@ lsst_butler_repo_instrument_classes:
   - "lsst.obs.decam.DarkEnergyCamera"
 
 # write-curated-calibrations run for each, right after the instruments
-# above. Set to [] to skip.
-lsst_butler_repo_curated_calibration_instruments:
-  - "lsst.obs.decam.DarkEnergyCamera"
+# above (--collection is required since butler write-curated-calibrations
+# now needs it or --label). Set to [] to skip.
+lsst_butler_repo_curated_calibrations:
+  - instrument: "lsst.obs.decam.DarkEnergyCamera"
+    collection: "DECam/calib"
 
 # Registered in this order, after the curated calibrations above. Each
 # needs a `name` (-c name=...) and `config` (-C ..., e.g. $OBS_DECAM_DIR/

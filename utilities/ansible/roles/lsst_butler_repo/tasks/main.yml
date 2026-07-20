@@ -54,8 +54,8 @@
     {% for skymap in lsst_butler_repo_skymaps %}
     butler register-skymap "{{ lsst_butler_repo_dir }}" -C "{{ skymap.config }}" -c name="{{ skymap.name }}"
     {% endfor %}
-    {% for instrument_class in lsst_butler_repo_curated_calibration_instruments %}
-    butler write-curated-calibrations "{{ lsst_butler_repo_dir }}" {{ instrument_class }}
+    {% for calib in lsst_butler_repo_curated_calibrations %}
+    butler write-curated-calibrations "{{ lsst_butler_repo_dir }}" {{ calib.instrument }} --collection {{ calib.collection }}
     {% endfor %}
   args:
     executable: /bin/bash

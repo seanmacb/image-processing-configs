@@ -138,8 +138,9 @@ target any LSST stack install, not just the one `lsst_install_dir` names.
   — which install's `setup_env.sh` to source before running `butler`.
 - `lsst_butler_repo_instrument_classes` — instruments registered right
   after `butler create` (`register-instrument ... --update`). `[]` to skip.
-- `lsst_butler_repo_curated_calibration_instruments` — instruments run
-  through `write-curated-calibrations` right after that. `[]` to skip.
+- `lsst_butler_repo_curated_calibrations` — instruments run through
+  `write-curated-calibrations` right after that, each an `{instrument,
+  collection}` pair (butler requires `--collection`). `[]` to skip.
 - `lsst_butler_repo_skymaps` — skymaps registered after that
   (`register-skymap ... -C <config> -c name=<name>`), each a `{name,
   config}` pair. `[]` to skip.
@@ -165,8 +166,9 @@ What it does:
   `butler create` at it via `--seed-config`, then removes the temp file.
 - Sources the activation script once, then in that same shell: `butler
   create`, `register-instrument --update` for each instrument,
-  `write-curated-calibrations` for each of those same instruments, and
-  `register-skymap` for each skymap — combined into one task since sourcing
+  `register-skymap` for each skymap, and `write-curated-calibrations` for
+  each `lsst_butler_repo_curated_calibrations` entry — combined into one
+  task since sourcing
   the pipeline env is slow and every task gets its own shell.
 - Writes `lsst_butler_repo_dir/setup_repo.sh` (see below).
 - Recursively fixes group ownership/permissions, same as `lsst_pipeline`.
