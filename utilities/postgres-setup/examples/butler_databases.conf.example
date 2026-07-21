@@ -1,0 +1,20 @@
+# Database list for setup_butler_postgres.sh
+#
+# One entry per line, colon-separated:
+#   database_name:role_name:password
+#
+# - Blank lines and lines starting with '#' are ignored.
+# - Leave the password field empty (database_name:role_name:) to be
+#   prompted for it interactively when the script runs, instead of
+#   storing it in this file.
+#
+# Copy this file, adjust the entries, and either pass its path as the
+# first argument to setup_butler_postgres.sh, or point DB_LIST_FILE at it:
+#   sudo ./setup_butler_postgres.sh /path/to/databases.conf
+#   DB_LIST_FILE=/path/to/databases.conf sudo -E ./setup_butler_postgres.sh
+
+butler_main:main_user:PASSWORD
+butler_testing:testing_user:PASSWORD
+
+# Password omitted here -- setup_butler_postgres.sh will prompt for it.
+another_survey_butler:another_survey_user:

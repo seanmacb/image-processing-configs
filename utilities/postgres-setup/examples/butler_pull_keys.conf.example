@@ -1,0 +1,21 @@
+# SSH public keys allowed to pull backups, for setup_butler_backups.sh
+#
+# One "authorized_keys"-format public key per line:
+#   <key-type> <base64-key> [comment]
+#
+# - Blank lines and lines starting with '#' are ignored.
+# - Each key is installed for the dedicated PULL_USER account
+#   (default: butler-backup-pull), restricted (via a forced command) to
+#   running "rsync --server ..." under NOPASSWD sudo as postgres -- i.e.
+#   only enough access to pull the backup directory, nothing else.
+# - Generate a dedicated key pair on the SECONDARY (pulling) machine for
+#   this purpose rather than reusing a personal key, e.g.:
+#     ssh-keygen -t ed25519 -f ~/.ssh/id_butler_pull -C "butler-backup-pull@<secondary-host>"
+#   and paste the resulting .pub file's contents below.
+#
+# Copy this file, add the real key(s), and either pass its path as the
+# first argument to setup_butler_backups.sh, or point PULL_KEYS_FILE at it:
+#   sudo ./setup_butler_backups.sh /path/to/pull_authorized_keys.conf
+#   PULL_KEYS_FILE=/path/to/pull_authorized_keys.conf sudo -E ./setup_butler_backups.sh
+
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... butler-backup-pull@secondary-host
