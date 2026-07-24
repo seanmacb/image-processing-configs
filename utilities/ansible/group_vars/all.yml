@@ -2,7 +2,7 @@
 # Directory on the target server where the pipeline gets installed.
 # It is shared between all members of lsst_shared_group, so everything
 # created under it is group-owned with the setgid bit set.
-lsst_install_dir: "/disk/groups/des/lsst_pipeline/v30_0_x"
+lsst_install_dir: "/disk/groups/des/lsst_pipeline/w_2026_30"
 
 # Linux group that should have shared read/write access to lsst_install_dir.
 # ansible_user must already be a member of this group on the target host.
@@ -22,15 +22,15 @@ lsst_prepare_env_script_name: "setup_env.sh"
 lsst_testing_dir: "{{ lsst_install_dir }}/testing"
 
 # eups distrib / lsstinstall version tag to install.
-lsst_version: "v30_0_2"
+lsst_version: "w_2026_30"
 
 # Whether to download and run the pipelines_check demo as a smoke test
 # after installation.
 lsst_run_demo_check: false
-lsst_demo_pipelines_check_version: "30.0.2"
+lsst_demo_pipelines_check_version: "w.2026.30"
 
 # Whether to clone the rc2_subset tutorial dataset and run a butler smoke
 # test against it after installation. Uses git/git-lfs from the sourced
 # LSST stack environment.
 lsst_run_rc2_subset_check: false
-lsst_rc2_subset_version: "v30.0.2"
+lsst_rc2_subset_version: "w.2026.30"

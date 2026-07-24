@@ -8,7 +8,7 @@
 # pointing eups at it as a LOCAL package lets us add filters without
 # rebuilding/patching the shared lsst_distrib install.
 lsst_custom_filters_obs_decam_git_url: "https://github.com/lsst/obs_decam.git"
-lsst_custom_filters_obs_decam_ref: "v30.0.2"
+lsst_custom_filters_obs_decam_ref: "w.2026.30"
 lsst_custom_filters_obs_decam_dir: "{{ lsst_install_dir }}/repos/obs_decam"
 # Local branch created on top of obs_decam_ref to hold the filter edits,
 # so `git status`/history clearly separates them from upstream.
@@ -17,7 +17,7 @@ lsst_custom_filters_obs_decam_branch: "uzh/custom-decam-filters"
 # git source for the local skymap checkout (same LOCAL-package approach,
 # needed to register new bands in SUPPORTED_FILTERS).
 lsst_custom_filters_skymap_git_url: "https://github.com/lsst/skymap.git"
-lsst_custom_filters_skymap_ref: "v30.0.2"
+lsst_custom_filters_skymap_ref: "w.2026.30"
 lsst_custom_filters_skymap_dir: "{{ lsst_install_dir }}/repos/skymap"
 lsst_custom_filters_skymap_branch: "uzh/custom-decam-filters"
 
