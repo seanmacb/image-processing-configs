@@ -19,6 +19,12 @@
     source "{{ lsst_install_dir }}/lsst_stack/loadLSST.sh"
     setup lsst_distrib
     setup -r .
+    # bin/check_transfer_count.py etc. are generated from bin.src/ by scons
+    # (see SConstruct), not committed to the repo. Build only the "bin"
+    # target, not the default "all" target, since the latter's action is
+    # to run bin/run_demo.sh itself - running it twice breaks (some steps,
+    # e.g. pipetask run, aren't safe to repeat against the same output run).
+    scons bin
     ./bin/run_demo.sh
   args:
     chdir: "{{ lsst_install_dir }}/demo_data/pipelines_check-{{ lsst_demo_pipelines_check_version }}"
