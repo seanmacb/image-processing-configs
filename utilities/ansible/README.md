@@ -27,10 +27,16 @@ on a remote server.
      patch selector the tutorial scripts use from coaddition onward (default:
      matches the upstream tutorial's own choice, `hsc_rings_v1` / `9813` /
      `38, 39, 40, 41`).
-   - `lsst_rc2_subset_tutorial_slurm_cpus` / `_mem` / `_time` / `_partition` —
-     resources requested by the `#SBATCH` header written into each tutorial
-     script; only take effect if a script is submitted with `sbatch` (default:
-     8 cpus, 32G, 24h, empty partition = cluster default).
+   - `lsst_rc2_subset_tutorial_slurm` — per-step `{cpus, mem_mb, time}` dict
+     (keys: `single_frame`, `uber_cal`, `make_warps`, `coadds`,
+     `coadd_measurement`, `forced_photometry`, `run_tutorial`) requested by
+     the `#SBATCH` header written into each tutorial script; only takes
+     effect if a script is submitted with `sbatch`. Sized per-step (not one
+     flat value) since the steps' actual resource needs differ by more than
+     an order of magnitude — see the comment above this var in
+     `group_vars/all.yml` for the sizing rationale and sources.
+   - `lsst_rc2_subset_tutorial_slurm_partition` — SLURM partition for all of
+     the above (default: cluster default if empty).
 
 ## Run
 
@@ -136,11 +142,11 @@ rm -rf <lsst_install_dir>/lsst_stack/conda/envs/lsst-scipipe-<version>
 The smoke test above only clones `rc2_subset` and queries it - it doesn't
 process any data. To actually run the upstream ["Getting
 Started"](https://pipelines.lsst.io/getting-started/) tutorial (Parts 2, 4,
-5 and 6 - single frame calibration through forced photometry; Part 3
-"Displaying exposures" and Part 7 "Multiband analysis" are interactive/
-notebook-based and have no corresponding script here), `lsst_pipeline`
-writes one standalone script per tutorial step, plus a script that runs them
-all in sequence, to `lsst_install_dir/demo_data/tutorial_scripts/`:
+5, 6 and the plotting part of 7 - single frame calibration through the
+multiband color-color diagram; Part 3 "Displaying exposures" is interactive/
+notebook-based and has no corresponding script here), `lsst_pipeline` writes
+one standalone script per tutorial step, plus a script that runs them all in
+sequence, to `lsst_install_dir/demo_data/tutorial_scripts/`:
 
 - `common.sh` — not run directly; sourced by every numbered step to
   activate the environment, `setup -j -r` the `rc2_subset` checkout, and
@@ -156,7 +162,10 @@ all in sequence, to `lsst_install_dir/demo_data/tutorial_scripts/`:
 - `05_coadd_measurement.sh` (Part 6, first half) — `coadd_measurement`.
 - `06_forced_photometry.sh` (Part 6, second half) — `forcedPhotCoadd` only
   (see known issue below re: the upstream tutorial's `forced_objects`).
-- `run_tutorial.sh` — runs all six steps above in order; `./run_tutorial.sh
+- `07_multiband_plot.sh`/`.py` (Part 7) — g/r/i color-color diagram from the
+  forced-photometry catalogs, saved as `multiband_color_color.png` in the
+  working directory.
+- `run_tutorial.sh` — runs all seven steps above in order; `./run_tutorial.sh
   03` resumes from step 03 onward.
 
 Each script can be run directly (`bash 01_single_frame.sh`) or submitted as

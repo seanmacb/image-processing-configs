@@ -47,6 +47,11 @@ lsst_rc2_subset_tutorial_skymap: "hsc_rings_v1"
 lsst_rc2_subset_tutorial_tract: 9813
 lsst_rc2_subset_tutorial_patches: "38, 39, 40, 41"
 
+# Single patch (must be one of lsst_rc2_subset_tutorial_patches above)
+# plotted by 07_multiband_plot.py - matches the upstream tutorial's own
+# choice.
+lsst_rc2_subset_tutorial_plot_patch: 41
+
 # SLURM resources requested by the #SBATCH header in each generated
 # tutorial script - only take effect if a script is submitted with
 # sbatch; ignored when run directly (bash step.sh / ./step.sh). Empty

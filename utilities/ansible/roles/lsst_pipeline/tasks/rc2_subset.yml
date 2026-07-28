@@ -61,3 +61,5 @@
     - 04_coadds.sh
     - 05_coadd_measurement.sh
     - 06_forced_photometry.sh
+    - 07_multiband_plot.py
+    - 07_multiband_plot.sh

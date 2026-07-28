@@ -15,8 +15,6 @@ export BUTLER_REPO="{{ lsst_install_dir }}/demo_data/rc2_subset/SMALL_HSC/butler
 export PIPELINE="${DRP_PIPE_DIR}/pipelines/HSC/DRP-RC2_subset.yaml"
 export DATA_QUERY="skymap = '{{ lsst_rc2_subset_tutorial_skymap }}' AND tract = {{ lsst_rc2_subset_tutorial_tract }} AND patch in ({{ lsst_rc2_subset_tutorial_patches }})"
 
-cd "{{ lsst_install_dir }}/demo_data/rc2_subset"
-
 # Cores to hand to pipetask's -j: prefer the SLURM allocation this script
 # is actually running under (set whether launched via sbatch or srun), so
 # a step submitted with `sbatch --cpus-per-task=N` uses N automatically
