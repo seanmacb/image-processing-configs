@@ -28,6 +28,12 @@ if [ -d "${lsst_prepare_env_repos_dir}" ]; then
 fi
 unset lsst_prepare_env_repos_dir
 
+# This cluster runs BPS via ctrl_bps_parsl on Slurm, not HTCondor (BPS's
+# default WMS plugin). Without this, `bps report`/`status`/`cancel` fall
+# back to looking for a local HTCondor schedd and fail, since those
+# commands don't read the submit yaml's `wmsServiceClass`.
+export BPS_WMS_SERVICE_CLASS=lsst.ctrl.bps.parsl.ParslService
+
 # The butler repo being processed is a shared folder used by every
 # {{ lsst_shared_group }} member. Set a group-writable umask so files and
 # directories created in it (butler ingest, pipetask runs, ...) stay

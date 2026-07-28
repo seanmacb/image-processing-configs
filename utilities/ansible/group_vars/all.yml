@@ -112,3 +112,19 @@ lsst_rc2_subset_tutorial_slurm:
   # allocation; time is the sum of the steps above plus ~1.5h margin.
   run_tutorial: {cpus: 32, mem_mb: 81920, time: "12:00:00"}
 lsst_rc2_subset_tutorial_slurm_partition: "standard"
+
+# Proof-of-principle multi-node distribution for single_frame via BPS +
+# ctrl_bps_parsl (see bps_pilot/), as an alternative to 01_single_frame.sh's
+# single-node `pipetask run -j`. Not yet validated against a real run;
+# requires ctrl_bps_parsl in the installed stack. nodes/cores_per_node split
+# single_frame's existing 32-cpu/80GB budget across 2 nodes instead of 1
+# (mem_per_node in GB, per ctrl_bps_parsl's Slurm site config - unlike the
+# raw #SBATCH --mem=...M elsewhere here). driver: resources for the `bps
+# submit`/parsl process itself, not the actual processing.
+lsst_rc2_subset_tutorial_bps_pilot:
+  single_frame:
+    nodes: 2
+    cores_per_node: 16
+    mem_per_node_gb: 40
+    walltime: "02:00:00"
+    driver: {cpus: 1, mem_mb: 4096, time: "02:30:00"}

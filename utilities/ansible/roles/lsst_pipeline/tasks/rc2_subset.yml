@@ -63,3 +63,26 @@
     - 06_forced_photometry.sh
     - 07_multiband_plot.py
     - 07_multiband_plot.sh
+
+# Proof-of-principle multi-node distribution for single_frame via BPS
+# (lsst.ctrl.bps) + ctrl_bps_parsl, kept in its own subdirectory rather than
+# alongside the single-node tutorial_scripts/ above - it's an alternative,
+# not-yet-validated path (see group_vars/all.yml's
+# lsst_rc2_subset_tutorial_bps_pilot comment), not part of the main
+# tutorial sequence.
+- name: Ensure tutorial_scripts/bps_pilot directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/demo_data/tutorial_scripts/bps_pilot"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+- name: Write rc2_subset BPS pilot scripts
+  ansible.builtin.template:
+    src: "tutorial_scripts/bps_pilot/{{ item }}.j2"
+    dest: "{{ lsst_install_dir }}/demo_data/tutorial_scripts/bps_pilot/{{ item }}"
+    mode: "0775"
+    group: "{{ lsst_shared_group }}"
+  loop:
+    - bps_single_frame.yaml
+    - 01_single_frame_bps.sh

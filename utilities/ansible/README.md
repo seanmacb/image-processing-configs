@@ -193,6 +193,38 @@ rewritten on every `site.yml` run (whenever `lsst_run_rc2_subset_check` is
 true), so hand edits won't survive a re-run — change the ansible
 templates/group_vars instead.
 
+### BPS multi-node pilot (`tutorial_scripts/bps_pilot/`, proof-of-principle)
+
+Every step above runs on a single SLURM node (`pipetask run -j`, threaded
+within one node's allocation). `tutorial_scripts/bps_pilot/` holds an
+alternative for Part 2 that instead distributes `singleFrame` across
+*multiple* nodes at once, via [BPS](https://pipelines.lsst.io/modules/lsst.ctrl.bps/quickstart.html)
+(`lsst.ctrl.bps`) and the [`ctrl_bps_parsl`](https://github.com/lsst/ctrl_bps_parsl)
+WMS plugin's `Slurm` site class, which builds one QuantumGraph and submits
+one SLURM job per node to run clusters of it in parallel:
+
+- `bps_single_frame.yaml` — BPS submit config for `singleFrame`; per-node
+  resources come from `lsst_rc2_subset_tutorial_bps_pilot.single_frame` in
+  `group_vars/all.yml`. Butler/pipeline/data-query values are left as
+  `${BUTLER_REPO}`/`${PIPELINE}`/`${DATA_QUERY}` — `lsst.ctrl.bps` expands
+  these from the calling shell's environment at submit time.
+- `01_single_frame_bps.sh` — driver script; sources
+  `../common.sh` for the environment/env vars, then runs `bps submit
+  bps_single_frame.yaml`. Its own `#SBATCH` resources are for the driver
+  process only (needs to stay alive to monitor/dispatch the whole run, but
+  does little work itself) — the actual per-node processing jobs are
+  submitted separately by `ctrl_bps_parsl`.
+
+Kept in its own subdirectory, deployed by a separate ansible task, and not
+part of `run_tutorial.sh` — this is a pilot, not yet validated against a
+real run on this cluster, and requires `ctrl_bps_parsl` to be present in the
+installed stack (`python -c "import lsst.ctrl.bps.parsl"`). Given the
+`rc2_subset` butler uses a SQLite registry (single-writer), don't extend
+this pattern to steps that write concurrently to the same output
+collection without checking BPS's execution-butler consolidation handles
+it — see the SQLite/concurrent-writer discussion in this repo's git history
+for context before generalizing beyond `single_frame`.
+
 
 ## Butler repo (separate, opt-in role)
 
