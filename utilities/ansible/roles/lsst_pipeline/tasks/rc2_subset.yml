@@ -33,3 +33,31 @@
     chdir: "{{ lsst_install_dir }}/demo_data/rc2_subset"
     executable: /bin/bash
   changed_when: true
+
+- name: Ensure tutorial_scripts directory exists
+  ansible.builtin.file:
+    path: "{{ lsst_install_dir }}/demo_data/tutorial_scripts"
+    state: directory
+    group: "{{ lsst_shared_group }}"
+    mode: "2775"
+
+# Runs the actual rc2_subset "Getting Started" tutorial processing steps
+# (https://pipelines.lsst.io/getting-started/) - the smoke test above only
+# sets up and queries the dataset, it doesn't process it. Split one script
+# per tutorial step so each can be run/resubmitted individually, plus
+# run_tutorial.sh to call them all in sequence. See README.md for details.
+- name: Write rc2_subset tutorial step scripts
+  ansible.builtin.template:
+    src: "tutorial_scripts/{{ item }}.j2"
+    dest: "{{ lsst_install_dir }}/demo_data/tutorial_scripts/{{ item }}"
+    mode: "0775"
+    group: "{{ lsst_shared_group }}"
+  loop:
+    - common.sh
+    - run_tutorial.sh
+    - 01_single_frame.sh
+    - 02_uber_cal.sh
+    - 03_make_warps.sh
+    - 04_coadds.sh
+    - 05_coadd_measurement.sh
+    - 06_forced_photometry.sh

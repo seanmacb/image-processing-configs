@@ -20,7 +20,17 @@ on a remote server.
      after install (default: true).
    - `lsst_run_rc2_subset_check` — clone the `rc2_subset` tutorial dataset
      and run a `butler` smoke test against it after install (default: true).
-     Uses `git`/`git-lfs` from the sourced LSST stack environment.
+     Uses `git`/`git-lfs` from the sourced LSST stack environment. Also
+     writes the tutorial step scripts described in "Running the rc2_subset
+     tutorial" below.
+   - `lsst_rc2_subset_tutorial_skymap` / `_tract` / `_patches` — skymap/tract/
+     patch selector the tutorial scripts use from coaddition onward (default:
+     matches the upstream tutorial's own choice, `hsc_rings_v1` / `9813` /
+     `38, 39, 40, 41`).
+   - `lsst_rc2_subset_tutorial_slurm_cpus` / `_mem` / `_time` / `_partition` —
+     resources requested by the `#SBATCH` header written into each tutorial
+     script; only take effect if a script is submitted with `sbatch` (default:
+     8 cpus, 32G, 24h, empty partition = cluster default).
 
 ## Run
 
@@ -112,12 +122,67 @@ rm -rf <lsst_install_dir>/lsst_stack/conda/envs/lsst-scipipe-<version>
 - Optionally downloads `pipelines_check` and runs `./bin/run_demo.sh` to
   verify the install.
 - Optionally clones `rc2_subset` and runs `butler query-*` commands against
-  it as a further smoke test.
+  it as a further smoke test, and writes the tutorial step scripts (see
+  "Running the rc2_subset tutorial" below).
 - Recursively fixes group ownership/permissions (`chgrp`, `chmod g+rwX`,
   setgid on directories) so every group member can use the shared install.
 - Writes `lsst_install_dir/setup_env.sh` (see "Environment activation
   script" below), a single script users source to fully activate the
   environment.
+
+
+## Running the rc2_subset tutorial
+
+The smoke test above only clones `rc2_subset` and queries it - it doesn't
+process any data. To actually run the upstream ["Getting
+Started"](https://pipelines.lsst.io/getting-started/) tutorial (Parts 2, 4,
+5 and 6 - single frame calibration through forced photometry; Part 3
+"Displaying exposures" and Part 7 "Multiband analysis" are interactive/
+notebook-based and have no corresponding script here), `lsst_pipeline`
+writes one standalone script per tutorial step, plus a script that runs them
+all in sequence, to `lsst_install_dir/demo_data/tutorial_scripts/`:
+
+- `common.sh` — not run directly; sourced by every numbered step to
+  activate the environment, `setup -j -r` the `rc2_subset` checkout, and
+  export `BUTLER_REPO`/`PIPELINE`/`DATA_QUERY`/`TUTORIAL_CORES`.
+- `01_single_frame.sh` (Part 2) — `pipetask run ...#singleFrame`. By far the
+  most time-consuming step (~11h single-core per the upstream tutorial).
+- `02_uber_cal.sh` (Part 4) — `fgcm`, `gbdesAstrometricFit`, then
+  `source_calibration`. `fgcm` is hardcoded to `-j 1`: it errors out on more
+  than one core (known issue, see below).
+- `03_make_warps.sh` (Part 5, first half) — `makeDirectWarp,makePsfMatchedWarp`
+  (see known issue below re: the upstream tutorial's `makeWarp`).
+- `04_coadds.sh` (Part 5, second half) — `selectDeepCoaddVisits,assembleCoadd`.
+- `05_coadd_measurement.sh` (Part 6, first half) — `coadd_measurement`.
+- `06_forced_photometry.sh` (Part 6, second half) — `forcedPhotCoadd` only
+  (see known issue below re: the upstream tutorial's `forced_objects`).
+- `run_tutorial.sh` — runs all six steps above in order; `./run_tutorial.sh
+  03` resumes from step 03 onward.
+
+Each script can be run directly (`bash 01_single_frame.sh`) or submitted as
+its own SLURM job (`sbatch 01_single_frame.sh` — the `#SBATCH` header lines
+are plain comments to bash, only `sbatch` reads them). `run_tutorial.sh` can
+likewise be run directly or submitted as one job covering the whole
+sequence (`sbatch run_tutorial.sh`). Every step passes `-j` to `pipetask
+run`, set to `$SLURM_CPUS_PER_TASK`/`$SLURM_JOB_CPUS_PER_NODE` when running
+inside a SLURM allocation, or `nproc` otherwise — so submitting with e.g.
+`sbatch --cpus-per-task=16 01_single_frame.sh` both requests and actually
+uses 16 cores, without needing to regenerate the script.
+
+**Known issues** (see the [UZH LSST alerts known-issues
+list](https://lsst-alerts-at-uzh.readthedocs.io/en/latest/usage.html#known-issues-with-the-v29-2-1-tutorials)
+for upstream context, in case the version installed here diverges further):
+`makeWarp` in the upstream tutorial's Part 5 no longer exists as a pipeline
+subset — split into `makeDirectWarp`/`makePsfMatchedWarp`, both applied in
+`03_make_warps.sh`. The upstream tutorial's Part 6 `forced_objects` subset
+fails at quantum-graph build time (missing `pvi` /
+`deepCoadd_Sersic_multiprofit` dataset types) — `06_forced_photometry.sh`
+runs `forcedPhotCoadd` on its own instead, per the documented workaround.
+
+Not regenerated selectively: all scripts in `tutorial_scripts/` are
+rewritten on every `site.yml` run (whenever `lsst_run_rc2_subset_check` is
+true), so hand edits won't survive a re-run — change the ansible
+templates/group_vars instead.
 
 
 ## Butler repo (separate, opt-in role)

@@ -1,0 +1,8 @@
+#SBATCH --job-name={{ sbatch_job_name }}
+#SBATCH --cpus-per-task={{ sbatch_resources.cpus }}
+#SBATCH --mem={{ sbatch_resources.mem_mb }}M
+#SBATCH --time={{ sbatch_resources.time }}
+{% if lsst_rc2_subset_tutorial_slurm_partition %}
+#SBATCH --partition={{ lsst_rc2_subset_tutorial_slurm_partition }}
+{% endif %}
+#SBATCH --output=%x-%j.log

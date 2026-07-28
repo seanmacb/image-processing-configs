@@ -24,13 +24,86 @@ lsst_testing_dir: "{{ lsst_install_dir }}/testing"
 # eups distrib / lsstinstall version tag to install.
 lsst_version: "w_2026_30"
 
+
+
 # Whether to download and run the pipelines_check demo as a smoke test
 # after installation.
 lsst_run_demo_check: false
 lsst_demo_pipelines_check_version: "w.2026.30"
+
+
 
 # Whether to clone the rc2_subset tutorial dataset and run a butler smoke
 # test against it after installation. Uses git/git-lfs from the sourced
 # LSST stack environment.
 lsst_run_rc2_subset_check: false
 lsst_rc2_subset_version: "w.2026.30"
+
+# skymap/tract/patch selector used by the coaddition-onward rc2_subset
+# tutorial scripts (demo_data/tutorial_scripts/, written whenever
+# lsst_run_rc2_subset_check is true) - matches the tract/patches the
+# upstream "Getting Started" tutorial itself uses.
+lsst_rc2_subset_tutorial_skymap: "hsc_rings_v1"
+lsst_rc2_subset_tutorial_tract: 9813
+lsst_rc2_subset_tutorial_patches: "38, 39, 40, 41"
+
+# SLURM resources requested by the #SBATCH header in each generated
+# tutorial script - only take effect if a script is submitted with
+# sbatch; ignored when run directly (bash step.sh / ./step.sh). Empty
+# partition uses the cluster's default partition.
+#
+# cpus/mem_mb are per-step, not one flat value, because the steps' actual
+# resource needs differ by more than an order of magnitude - a single
+# shared value would badly over- or under-provision most of them. Sized
+# from LSST's own published, production-tuned per-task requestMemory
+# figures for this exact pipeline at full RC2 scale (3 tracts):
+# https://github.com/lsst/drp_pipe/blob/main/bps/resources/HSC/DRP-RC2.yaml
+# (rc2_subset is 1 tract/4 patches, so these are a safe upper bound, not a
+# tight fit). Tasks not listed there (isr/characterizeImage/calibrate,
+# makeDirectWarp/makePsfMatchedWarp, gbdesAstrometricFit,
+# selectDeepCoaddVisits) fall back to ctrl_bps's own global default of
+# 2048 MiB per quantum - LSST's own ops team found that sufficient even at
+# full RC2 scale.
+#
+# mem_mb = cpus * <dominant per-quantum requestMemory for that step, MB> *
+# 1.25 (25% headroom), rounded. cpus is capped at 4 for the
+# coadds/coadd_measurement/forced_photometry steps since rc2_subset only
+# has 4 patches (lsst_rc2_subset_tutorial_patches above) - only 4 quanta
+# can ever run concurrently there, so requesting more cores just forces a
+# bigger, harder-to-schedule memory reservation for no parallelism gained.
+# uber_cal's mem is dominated by fgcmFitCycle's 24576 MB regardless of
+# cpus, since fgcm is hardcoded to -j 1 (see 02_uber_cal.sh.j2) - the other
+# cores in that job are for gbdes/source_calibration, not fgcm.
+#
+# time: the upstream "Getting Started" tutorial's own runtime figures
+# (https://pipelines.lsst.io/getting-started/) - single_frame ~11h,
+# make_warps ~90min, coadds ~70min, coadd_measurement ~90min,
+# forced_photometry ~75min - are SERIAL, single-core estimates for
+# processing the whole dataset, not what a single -j-parallel SLURM job
+# should request. Rather than reuse those figures directly (which would
+# hugely over-request walltime once the work is actually split across
+# cpus cores), each is divided by cpus assuming only ~50% parallel
+# efficiency (derated for scheduling/quantum-size unevenness and the
+# unparallelizable graph-build/env-activation overhead each job pays once)
+# and rounded up generously - still an estimate, not a measurement: nobody
+# has measured rc2_subset's actual quantum count/mix on this cluster.
+# uber_cal has no upstream serial baseline to derate (gbdes/
+# source_calibration aren't separately timed by the tutorial, and fgcm's
+# -j 1 constraint means its own share of the walltime does not shrink with
+# more cpus at all), so it's left as a flat, ungrounded guess. Tighten all
+# of these after a real run via `sacct -j <id> --format=Elapsed` - a
+# request closer to the real elapsed time backfills more easily than a
+# padded one (see the SLURM scheduling discussion earlier in this file's
+# history/README).
+lsst_rc2_subset_tutorial_slurm:
+  single_frame: {cpus: 32, mem_mb: 81920, time: "02:00:00"} # 32 * 2048 (isr/characterizeImage/calibrate: ctrl_bps default) * 1.25; ~11h serial / 32 cpus @ ~50% efficiency, rounded up
+  uber_cal: {cpus: 8, mem_mb: 30720, time: "03:00:00"} # fgcmFitCycle 24576 * 1.25 (dominates over 8 * 2048 gbdes/source_calibration default); time is an ungrounded guess, see above
+  make_warps: {cpus: 16, mem_mb: 40960, time: "01:00:00"} # 16 * 2048 (makeDirectWarp/makePsfMatchedWarp: ctrl_bps default) * 1.25; ~90min serial / 16 cpus @ ~50% efficiency, rounded up
+  coadds: {cpus: 4, mem_mb: 81920, time: "01:00:00"} # 4 * 16384 (assembleCoadd) * 1.25, cpus capped at patch count; ~70min serial / 4 cpus @ ~50% efficiency, rounded up
+  coadd_measurement: {cpus: 4, mem_mb: 81920, time: "01:30:00"} # 4 * 16384 (detection/deblend, both above measure's 10000) * 1.25, cpus capped at patch count; ~90min serial / 4 cpus @ ~50% efficiency, rounded up
+  forced_photometry: {cpus: 4, mem_mb: 50000, time: "01:00:00"} # 4 * 10000 (forcedPhotCoadd) * 1.25, cpus capped at patch count; ~75min serial / 4 cpus @ ~50% efficiency, rounded up
+  # Whole-sequence run_tutorial.sh: needs the largest per-step cpus/mem
+  # (single_frame's, here) since it runs every step under one fixed
+  # allocation; time is the sum of the steps above plus ~1.5h margin.
+  run_tutorial: {cpus: 32, mem_mb: 81920, time: "12:00:00"}
+lsst_rc2_subset_tutorial_slurm_partition: "standard"
