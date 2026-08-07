@@ -1,12 +1,9 @@
 # lsst_pipeline Apptainer image (DRAFT)
 
-Apptainer/Singularity packaging of the LSST Science Pipelines stack + UZH
+Apptainer packaging of the LSST Science Pipelines stack + UZH
 custom-filter patches, as an alternative to installing `lsst_distrib` as
-loose files on shared storage (see `utilities/ansible/roles/lsst_pipeline`
-/ `lsst_custom_filters` for the current, non-containerized approach). The
-physik cluster's ansible-managed install is 156GB, but 128GB of that is
-`demo_data` (tutorial data, not software) - actual software is 28GB
-(`lsst_stack/`). Built `.sif` here: 2.9GB.
+loose files on shared storage. The physik cluster's ansible-managed install
+is 28GB (`lsst_stack/`). Built `.sif` here: 2.9GB.
 
 Motivation: S3IT's docs recommend containerizing over a bare conda/mamba
 env on their storage (`docs.s3it.uzh.ch/general/conda/`); S3IT's shared
