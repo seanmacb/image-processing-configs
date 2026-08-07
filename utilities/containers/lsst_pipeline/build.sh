@@ -89,9 +89,9 @@ check_dir() {
     local free_gb
     free_gb="$(df -Pk "${dir}" | awk 'NR==2 {print int($4/1024/1024)}')"
     if [[ -n "${free_gb}" && "${free_gb}" -lt "${MIN_FREE_GB}" ]]; then
-        echo "WARNING: only ${free_gb}GB free at ${label} (${dir}) - a full lsst_distrib" >&2
-        echo "  build can need ${MIN_FREE_GB}GB+ of scratch space. Point it elsewhere with" >&2
-        echo "  APPTAINER_TMPDIR/APPTAINER_CACHEDIR if this fills up mid-build." >&2
+        echo "WARNING: only ${free_gb}GB free at ${label} (${dir}) - pulling the upstream" >&2
+        echo "  lsst_distrib image can need ${MIN_FREE_GB}GB+ of scratch space. Point it" >&2
+        echo "  elsewhere with APPTAINER_TMPDIR/APPTAINER_CACHEDIR if this fills up mid-build." >&2
     fi
 }
 
@@ -108,9 +108,10 @@ fi
 OUT_SIF="${SCRIPT_DIR}/lsst_pipeline_${LSST_VERSION}.sif"
 
 echo ">>> Building ${OUT_SIF} from lsst_pipeline.def (build args: ${BUILD_ARGS_FILE})"
-echo ">>> This runs a full lsstinstall + eups distrib install lsst_distrib inside the"
-echo ">>> build - expect it to take a long time and a lot of disk (tens of GB free"
-echo ">>> in TMPDIR/apptainer's cache dir) on a first build."
+echo ">>> This pulls LSST's prebuilt ghcr.io/lsst/scipipe image (contains the full"
+echo ">>> lsst_distrib stack already, ~156GB uncompressed) and layers obs_decam/skymap"
+echo ">>> on top - expect a large download and ${MIN_FREE_GB}GB+ of scratch space on"
+echo ">>> the first build; later builds reuse apptainer's cached layers."
 
 apptainer build --arch amd64 --fakeroot --build-arg-file "${BUILD_ARGS_FILE}" \
     "${OUT_SIF}" "${SCRIPT_DIR}/lsst_pipeline.def"
