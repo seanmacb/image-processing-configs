@@ -72,7 +72,11 @@ def patch_skymap(repo_dir, filters):
     repo_dir = pathlib.Path(repo_dir)
     packers_path = repo_dir / "python/lsst/skymap/packers.py"
 
-    anchor_re = re.compile(r'^\s*\+ \[f"N\{d\}" for d in \(419, 540, 708, 964\)\]\s*$', re.MULTILINE)
+    # No trailing $ - the real line has a "# DECam narrow-bands" comment
+    # after the closing bracket (confirmed against the actual w.2026.30
+    # source), same as why the ansible version of this check (skymap.yml)
+    # doesn't anchor its grep -qE pattern at the end of the line either.
+    anchor_re = re.compile(r'^\s*\+ \[f"N\{d\}" for d in \(419, 540, 708, 964\)\]', re.MULTILINE)
     text = packers_path.read_text()
     match = anchor_re.search(text)
     if not match:
