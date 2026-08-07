@@ -6,10 +6,12 @@
 # S3IT ScienceCluster login node) over rsync/SSH. Deliberately just a thin
 # rsync wrapper - the interesting logic is in build.sh/lsst_pipeline.def.
 #
-# The physik cluster's equivalent lsst_stack install is 156GB - expect a
-# similarly large .sif, so this uses --partial (keep partially-transferred
-# data on interruption) + --partial-dir + --append-verify, so a dropped
-# connection resumes rather than restarting a 150GB+ transfer from zero.
+# Uses --partial + --partial-dir so a dropped connection resumes on rerun
+# rather than restarting from zero - rsync's normal delta algorithm alone
+# handles the resume, no --append/--append-verify needed (and --append*
+# actually conflicts with --partial-dir: it writes straight to the
+# destination file in place, which is incompatible with staging into a
+# separate partial-dir).
 #
 # USAGE (env vars, DEST_HOST and SIF required):
 #   SIF=lsst_pipeline_w_2026_30.sif DEST_HOST=<ssh-alias|user@host> ./ship_to_s3it.sh
@@ -39,7 +41,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] $*"; }
 log "=== Shipping ${SIF} (\"$(du -h "${SIF_PATH}" | cut -f1)\") to ${DEST_HOST}:${DEST_DIR}/ ==="
 
 ssh "${DEST_HOST}" "mkdir -p ${DEST_DIR}"
-rsync -avh --progress --partial --partial-dir=.rsync-partial --append-verify \
+rsync -avh --progress --partial --partial-dir=.rsync-partial \
     "${SIF_PATH}" "${DEST_HOST}:${DEST_DIR}/"
 
 log "OK: ${SIF} is now at ${DEST_HOST}:${DEST_DIR}/${SIF}"
