@@ -1,0 +1,27 @@
+# Custom filter definitions baked into the image by lsst_pipeline.def via
+# apply_custom_filters.py. Kept as a standalone file (not templated from
+# ansible) since apptainer def-file templating can't express a loop over a
+# list the way Jinja2 can.
+#
+# Mirrors utilities/ansible/roles/lsst_custom_filters/defaults/main.yml's
+# lsst_custom_filters list. NOT auto-synced - if that list changes, update
+# this file by hand too (or, once this container approach is validated,
+# replace the ansible role entirely and delete this duplication).
+- physical_filter: "N395 DECam c0015 3950.0 100.0"
+  band: "N395"
+  filter_map_target: "u"
+- physical_filter: "M411 DECam c0017 4112.0 264.0"
+  band: "M411"
+  filter_map_target: "g"
+- physical_filter: "M438 DECam c0019 4380.0 260.0"
+  band: "M438"
+  filter_map_target: "g"
+- physical_filter: "M464 DECam c0018 4640.0 264.0"
+  band: "M464"
+  filter_map_target: "g"
+- physical_filter: "M490 DECam c0020 4900.0 260.0"
+  band: "M490"
+  filter_map_target: "g"
+- physical_filter: "M517 DECam c0021 5170.0 260.0"
+  band: "M517"
+  filter_map_target: "g"

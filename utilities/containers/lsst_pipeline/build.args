@@ -1,0 +1,7 @@
+LSST_VERSION=w_2026_30
+OBS_DECAM_GIT_URL=https://github.com/lsst/obs_decam.git
+OBS_DECAM_REF=w.2026.30
+OBS_DECAM_BRANCH=uzh/custom-decam-filters
+SKYMAP_GIT_URL=https://github.com/lsst/skymap.git
+SKYMAP_REF=w.2026.30
+SKYMAP_BRANCH=uzh/custom-decam-filters

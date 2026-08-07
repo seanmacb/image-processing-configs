@@ -1,0 +1,160 @@
+Bootstrap: docker
+From: ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
+
+# lsst_pipeline.def
+#
+# DRAFT / NOT YET VALIDATED - see README.md. Builds an Apptainer image with
+# the LSST Science Pipelines stack plus the UZH custom-filter patches
+# (obs_decam + skymap), so the resulting .sif can be shipped to a cluster
+# (e.g. S3IT, confirmed CephFS-backed shared storage) without installing it
+# as loose files - the physik cluster's equivalent ansible-managed install
+# (same LSST_VERSION default) is 429,989 files / 156GB, a real measurement,
+# not an estimate.
+#
+# Starts FROM LSST's own official prebuilt image
+# (ghcr.io/lsst/scipipe:al9-<weekly-tag>_x86, confirmed to exist for weekly
+# tags - see README.md "Building on top of the upstream image") rather than
+# reinstalling lsst_distrib from scratch via lsstinstall/eups distrib on
+# every build. Only obs_decam/skymap (small, local patches) are actually
+# built here.
+#
+# Mirrors, at build time, what utilities/ansible/roles/lsst_custom_filters
+# currently does at deploy time against a live host (the base-stack install
+# itself, utilities/ansible/roles/lsst_pipeline, is superseded here by
+# pulling the upstream image instead). Deliberately kept independent of
+# that ansible tree for now (see README.md) - the two are not wired
+# together.
+#
+# Does NOT bake in a butler repo - that stays external (Postgres registry +
+# data on shared/bind-mounted storage), same as utilities/ansible/roles/
+# lsst_butler_repo. Bind-mount it at run time, see README.md.
+#
+# Build (on a machine with apptainer/singularity + fakeroot, NOT on the
+# target cluster - see build.sh):
+#   apptainer build --fakeroot --build-arg-file build.args \
+#       lsst_pipeline_<LSST_VERSION>.sif lsst_pipeline.def
+
+%arguments
+    LSST_VERSION=w_2026_30
+    OBS_DECAM_GIT_URL=https://github.com/lsst/obs_decam.git
+    OBS_DECAM_REF=w.2026.30
+    OBS_DECAM_BRANCH=uzh/custom-decam-filters
+    SKYMAP_GIT_URL=https://github.com/lsst/skymap.git
+    SKYMAP_REF=w.2026.30
+    SKYMAP_BRANCH=uzh/custom-decam-filters
+
+%files
+    custom/filters.yaml /opt/lsst_container_build/filters.yaml
+    custom/apply_custom_filters.py /opt/lsst_container_build/apply_custom_filters.py
+
+%post
+    set -eo pipefail
+
+    # git/git-lfs etc. for cloning obs_decam/skymap below. The base image
+    # is an LSST dev-oriented image, so it likely already has most of
+    # this (including the compiler toolchain scons needs, via its own
+    # conda env) - UNVERIFIED which of these are actually already present
+    # vs. genuinely missing; installing an already-present package is a
+    # harmless no-op, so this errs on the side of listing them all rather
+    # than trimming blind. See README.md "Known gaps".
+    dnf install -y git git-lfs patch rsync findutils
+    dnf clean all
+
+    mkdir -p /opt/repos
+
+    source /opt/lsst/software/stack/loadLSST.bash
+    setup lsst_distrib
+
+    # Pin a generic x86_64 baseline for the two packages we compile
+    # ourselves below, instead of whatever -march the build machine's own
+    # gcc/conda-gcc would default to. The image is built on a laptop/
+    # workstation but runs on S3IT's (different) CPUs, and an AVX2/AVX-512
+    # instruction actually baked in by a native-arch default would crash
+    # with SIGILL there instead of failing loudly at build time.
+    #
+    # x86-64-v3 (needs AVX2/BMI2/FMA, not AVX-512) rather than v2 or v4 -
+    # checked against `sinfo -o "%N %c %f"` on S3IT: every partition has
+    # AVX512 except u24-chaiam0-* (AMD EPYC 7402, Zen 2), which still has
+    # AVX2/BMI2/FMA (v3) - so v3 is the highest baseline safe on every
+    # listed partition, v4 would SIGILL on chaiam0. UNVERIFIED whether
+    # sconsUtils actually honours CCFLAGS/CXXFLAGS this way (passed both
+    # as env vars and scons command-line vars as a hedge); see README.md
+    # "Known gaps".
+    export CFLAGS="-march=x86-64-v3 -mtune=generic"
+    export CXXFLAGS="-march=x86-64-v3 -mtune=generic"
+
+    # --- obs_decam: clone, build, patch, set up as LOCAL package ---------
+    git clone --branch "{{ OBS_DECAM_REF }}" "{{ OBS_DECAM_GIT_URL }}" /opt/repos/obs_decam
+    cd /opt/repos/obs_decam
+    git checkout -b "{{ OBS_DECAM_BRANCH }}"
+    scons -j"$(nproc)" CCFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}"
+    python3 /opt/lsst_container_build/apply_custom_filters.py obs_decam \
+        --filters-file /opt/lsst_container_build/filters.yaml \
+        --repo-dir /opt/repos/obs_decam
+    setup -j -r /opt/repos/obs_decam
+    eups list obs_decam | grep -q LOCAL
+
+    # --- skymap: same pattern ---------------------------------------------
+    git clone --branch "{{ SKYMAP_REF }}" "{{ SKYMAP_GIT_URL }}" /opt/repos/skymap
+    cd /opt/repos/skymap
+    git checkout -b "{{ SKYMAP_BRANCH }}"
+    scons -j"$(nproc)" CCFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}"
+    python3 /opt/lsst_container_build/apply_custom_filters.py skymap \
+        --filters-file /opt/lsst_container_build/filters.yaml \
+        --repo-dir /opt/repos/skymap
+    setup -j -r /opt/repos/skymap
+    eups list skymap | grep -q LOCAL
+
+    # Verify filters actually landed (same check as
+    # lsst_custom_filters/tasks/verify.yml's first two tasks), fail the
+    # build loudly rather than shipping a silently-broken image.
+    python3 - <<'PYEOF'
+from lsst.obs.decam import DarkEnergyCamera
+import yaml
+
+with open("/opt/lsst_container_build/filters.yaml") as fh:
+    filters = yaml.safe_load(fh)
+
+expected = {(f["physical_filter"], f["band"]) for f in filters}
+found = {(fd.physical_filter, fd.band) for fd in DarkEnergyCamera.filterDefinitions}
+missing = expected - found
+if missing:
+    raise SystemExit(f"Missing from DarkEnergyCamera.filterDefinitions: {missing}")
+print("obs_decam: all custom filters present")
+PYEOF
+
+    rm -rf /opt/lsst_container_build
+
+%environment
+    # Path/activation command per pipelines.lsst.io/install/docker.html -
+    # NOT the lsstinstall-based loadLSST.sh path used by
+    # utilities/ansible/roles/lsst_prepare_env's setup_env.sh.j2 (that
+    # role installs via lsstinstall directly on a host; this image starts
+    # from LSST's own prebuilt docker/apptainer image instead, which lays
+    # the stack out differently).
+    source /opt/lsst/software/stack/loadLSST.bash
+    setup lsst_distrib
+
+    for pkg_dir in /opt/repos/*/; do
+        if [ -d "${pkg_dir}ups" ]; then
+            setup -j -r "${pkg_dir%/}"
+        fi
+    done
+
+    # Same as setup_env.sh.j2 - ctrl_bps_parsl on Slurm, not BPS's default
+    # HTCondor WMS plugin.
+    export BPS_WMS_SERVICE_CLASS=lsst.ctrl.bps.parsl.ParslService
+
+    # Butler repo is expected to be bind-mounted from shared/group storage
+    # (see README.md) - keep it group-writable the same way setup_env.sh.j2
+    # does for the ansible-managed install.
+    umask 0002
+
+%runscript
+    exec "$@"
+
+%labels
+    org.lsst.version {{ LSST_VERSION }}
+    org.lsst.base_image ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
+    org.lsst.obs_decam_branch {{ OBS_DECAM_BRANCH }}
+    org.lsst.skymap_branch {{ SKYMAP_BRANCH }}
