@@ -1,26 +1,20 @@
 # lsst_pipeline Apptainer image (DRAFT)
 
-Experimental Apptainer/Singularity packaging of the LSST Science Pipelines
-stack + UZH custom-filter patches, as an alternative to installing
-`lsst_distrib` as loose files onto a cluster's shared filesystem (see
-`utilities/ansible/roles/lsst_pipeline` / `lsst_custom_filters` for the
-current, working, non-containerized approach). The physik cluster's
-equivalent ansible-managed install (same `w_2026_30`) is **429,989 files /
-156GB** (`find w_2026_30/ -type f | wc -l`, `du -sh w_2026_30/`) - a real
-measurement, not an estimate.
+Apptainer/Singularity packaging of the LSST Science Pipelines stack + UZH
+custom-filter patches, as an alternative to installing `lsst_distrib` as
+loose files on shared storage (see `utilities/ansible/roles/lsst_pipeline`
+/ `lsst_custom_filters` for the current, non-containerized approach). The
+physik cluster's ansible-managed install is 156GB, but 128GB of that is
+`demo_data` (tutorial data, not software) - actual software is 28GB
+(`lsst_stack/`). Built `.sif` here: 2.9GB.
 
-Motivation is two-fold: S3IT's own docs explicitly recommend containerizing
-(Apptainer) over a bare conda/mamba env for exactly this reason -
-`docs.s3it.uzh.ch/general/conda/` warns of "crucially relevant
-implications when using Conda/Mamba on distributed filesystems"; and
-S3IT's shared storage is confirmed CephFS (`df -T` on
-`/shares/soares-santos.physik.uzh/...` - Ceph, not NFS), which like
-Lustre/GPFS has a dedicated metadata-server tier that heavy small-file
-access loads down.
+Motivation: S3IT's docs recommend containerizing over a bare conda/mamba
+env on their storage (`docs.s3it.uzh.ch/general/conda/`); S3IT's shared
+storage is CephFS, which like Lustre/GPFS has a metadata-server tier that
+many-small-files access loads down.
 
-**Status: local build succeeds and produces a working `.sif`, but this is
-still not wired into `utilities/ansible/`** and hasn't been run on S3IT
-yet. See `TODO.md` for known follow-up work.
+**Status:** local build works, not yet run on S3IT, not wired into
+`utilities/ansible/`. See `TODO.md`.
 
 ## Layout
 
@@ -90,15 +84,11 @@ reason to do it on a shared login node instead of your own machine.)
 ./build.sh path/to/other.args
 ```
 
-Produces `lsst_pipeline_<LSST_VERSION>.sif` next to this README. Even
-though the build no longer compiles `lsst_distrib` itself (see "Building
-on top of the upstream image" above), the upstream image it pulls already
-contains the full stack, so **250GB+ free scratch space** on the build
-machine is still the right expectation - the physik cluster's equivalent
-install is 156GB uncompressed, and a fakeroot build needs room for the
-pulled image layers, the unpacked working tree, and the final squashfs
-`.sif` at the same time. `build.sh` warns if the tmp/cache dirs it'll use
-look short on space.
+Produces `lsst_pipeline_<LSST_VERSION>.sif` next to this README - 2.9GB in
+practice. `build.sh`'s `MIN_FREE_GB=100` scratch-space check is more
+conservative than that, to cover the pulled image layers and unpacked
+working tree, not just the final squashfs size. `build.sh` warns if the
+tmp/cache dirs it'll use look short on space.
 
 Edit `build.args` (or pass a different `--build-arg-file`) to change
 `LSST_VERSION` / the `obs_decam`/`skymap` git refs - mirrors
@@ -118,10 +108,9 @@ in sync by hand for now.
 SIF=lsst_pipeline_w_2026_30.sif DEST_HOST=<your-s3it-alias> ./utilities/ship_to_s3it.sh
 ```
 
-Thin `rsync --partial` wrapper (resumable - the 156GB physik-cluster
-figure above means the `.sif` will likely be large enough that a dropped
-connection restarting from zero is a real annoyance, not a hypothetical)
-- see the script header for env vars (`DEST_DIR` etc.).
+Thin `rsync --partial` wrapper (resumable, so a dropped connection doesn't
+restart the transfer from zero) - see the script header for env vars
+(`DEST_DIR` etc.).
 
 ## Run it
 

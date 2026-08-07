@@ -20,13 +20,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_ARGS_FILE="${1:-${SCRIPT_DIR}/build.args}"
 
-# Minimum free space (GB) we want to see in the tmp/cache dirs apptainer
-# will actually use for the build. The physik cluster's equivalent
-# ansible-installed lsst_stack (same LSST_VERSION) measures 156GB /
-# 429,989 files - the fakeroot build needs room for that uncompressed
-# tree AND the final squashfs .sif at the same time, so this is
-# deliberately well above 156GB, not a tight fit.
-MIN_FREE_GB="${MIN_FREE_GB:-250}"
+# Minimum free space (GB) for the tmp/cache dirs apptainer will use.
+# Output .sif is 2.9GB; this covers pulled image layers + unpacked
+# working tree pre-compression, not just the final size.
+MIN_FREE_GB="${MIN_FREE_GB:-100}"
 
 if ! command -v apptainer >/dev/null 2>&1; then
     echo "ERROR: apptainer not found. Install it first: https://apptainer.org/docs/user/main/quick_start.html" >&2
@@ -108,9 +105,8 @@ fi
 OUT_SIF="${SCRIPT_DIR}/lsst_pipeline_${LSST_VERSION}.sif"
 
 echo ">>> Building ${OUT_SIF} from lsst_pipeline.def (build args: ${BUILD_ARGS_FILE})"
-echo ">>> This pulls LSST's prebuilt ghcr.io/lsst/scipipe image (contains the full"
-echo ">>> lsst_distrib stack already, ~156GB uncompressed) and layers obs_decam/skymap"
-echo ">>> on top - expect a large download and ${MIN_FREE_GB}GB+ of scratch space on"
+echo ">>> Pulls LSST's prebuilt ghcr.io/lsst/scipipe image and layers obs_decam/skymap"
+echo ">>> on top - expect a real download and ${MIN_FREE_GB}GB+ of scratch space on"
 echo ">>> the first build; later builds reuse apptainer's cached layers."
 
 apptainer build --arch amd64 --fakeroot --build-arg-file "${BUILD_ARGS_FILE}" \

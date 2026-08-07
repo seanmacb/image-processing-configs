@@ -3,13 +3,11 @@ From: ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
 
 # lsst_pipeline.def
 #
-# DRAFT / NOT YET VALIDATED - see README.md. Builds an Apptainer image with
-# the LSST Science Pipelines stack plus the UZH custom-filter patches
-# (obs_decam + skymap), so the resulting .sif can be shipped to a cluster
-# (e.g. S3IT, confirmed CephFS-backed shared storage) without installing it
-# as loose files - the physik cluster's equivalent ansible-managed install
-# (same LSST_VERSION default) is 429,989 files / 156GB, a real measurement,
-# not an estimate.
+# Local build confirmed working, not yet run on S3IT - see README.md.
+# Builds an Apptainer image with the LSST Science Pipelines stack plus the
+# UZH custom-filter patches (obs_decam + skymap), so the resulting .sif
+# can be shipped to a cluster (e.g. S3IT, CephFS-backed shared storage)
+# without installing it as loose files. Output: 2.9GB.
 #
 # Starts FROM LSST's own official prebuilt image
 # (ghcr.io/lsst/scipipe:al9-<weekly-tag>_x86, confirmed to exist for weekly
