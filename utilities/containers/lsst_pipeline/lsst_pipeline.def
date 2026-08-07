@@ -76,10 +76,20 @@ From: ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
     # checked against `sinfo -o "%N %c %f"` on S3IT: every partition has
     # AVX512 except u24-chaiam0-* (AMD EPYC 7402, Zen 2), which still has
     # AVX2/BMI2/FMA (v3) - so v3 is the highest baseline safe on every
-    # listed partition, v4 would SIGILL on chaiam0. UNVERIFIED whether
-    # sconsUtils actually honours CCFLAGS/CXXFLAGS this way (passed both
-    # as env vars and scons command-line vars as a hedge); see README.md
-    # "Known gaps".
+    # listed partition, v4 would SIGILL on chaiam0.
+    #
+    # ARCHFLAGS (env var, read by sconsUtils/state.py's _initEnvironment()
+    # and appended to CCFLAGS+LINKFLAGS) is the actual supported mechanism
+    # here - confirmed by reading sconsUtils' source after a real build
+    # failure. CCFLAGS/CXXFLAGS are NOT declared scons command-line
+    # Variables in this build system (only archflags, cc, debug, opt, etc.
+    # are - see state.py's _initVariables()), so passing them as
+    # `scons CCFLAGS=... CXXFLAGS=...` below previously failed the build
+    # outright with "Unprocessed arguments". CFLAGS/CXXFLAGS as plain env
+    # vars are ALSO separately read and folded into CCFLAGS/CXXFLAGS (only
+    # when sconsUtils is using conda-provided compilers) - kept as a
+    # second, redundant path, not the primary one.
+    export ARCHFLAGS="-march=x86-64-v3 -mtune=generic"
     export CFLAGS="-march=x86-64-v3 -mtune=generic"
     export CXXFLAGS="-march=x86-64-v3 -mtune=generic"
 
@@ -87,7 +97,7 @@ From: ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
     git clone --branch "{{ OBS_DECAM_REF }}" "{{ OBS_DECAM_GIT_URL }}" /opt/repos/obs_decam
     cd /opt/repos/obs_decam
     git checkout -b "{{ OBS_DECAM_BRANCH }}"
-    scons -j"$(nproc)" CCFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}"
+    scons -j"$(nproc)"
     python3 /opt/lsst_container_build/apply_custom_filters.py obs_decam \
         --filters-file /opt/lsst_container_build/filters.yaml \
         --repo-dir /opt/repos/obs_decam
@@ -98,7 +108,7 @@ From: ghcr.io/lsst/scipipe:al9-{{ LSST_VERSION }}_x86
     git clone --branch "{{ SKYMAP_REF }}" "{{ SKYMAP_GIT_URL }}" /opt/repos/skymap
     cd /opt/repos/skymap
     git checkout -b "{{ SKYMAP_BRANCH }}"
-    scons -j"$(nproc)" CCFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}"
+    scons -j"$(nproc)"
     python3 /opt/lsst_container_build/apply_custom_filters.py skymap \
         --filters-file /opt/lsst_container_build/filters.yaml \
         --repo-dir /opt/repos/skymap

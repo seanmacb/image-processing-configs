@@ -152,22 +152,33 @@ build. `build.sh` and `lsst_pipeline.def` guard the known risks:
 - **CPU instruction-set mismatch** on the two packages actually compiled
   during the build (`obs_decam`, `skymap` - `lsst_distrib` itself is
   prebuilt binaries fetched from LSST's server, not compiled locally):
-  `lsst_pipeline.def` pins `CFLAGS`/`CXXFLAGS` to `-march=x86-64-v3
-  -mtune=generic` instead of letting gcc default to `-march=native` (i.e.
-  your specific laptop CPU), which could otherwise bake in an instruction
-  your laptop has and an S3IT node doesn't, and crash with `SIGILL` there
-  instead of failing at build time. `x86-64-v3` was picked from real data,
-  not a guess: `sinfo -o "%N %c %f"` on S3IT shows every partition has
-  `AVX512` **except** `u24-chaiam0-*` (AMD EPYC 7402, Zen 2), which still
-  has AVX2/BMI2/FMA (v3) - so v3 is the highest baseline safe on every
-  listed partition, v4 would `SIGILL` on chaiam0. If you know jobs using
-  this image will never land on chaiam0 (e.g. via a Slurm `--constraint`),
-  v4 would be a safe bump there. **UNVERIFIED** whether `sconsUtils`
-  actually honours `CCFLAGS`/`CXXFLAGS` this way (passed both as env vars
-  and scons command-line vars as a hedge); worth confirming after the
-  first build, e.g. by checking the compiled `.so` files don't reference
-  AVX-512 (`objdump -d foo.so | grep -m1 -i zmm` should find nothing) or
-  just running the shipped `.sif` on S3IT once and watching for `SIGILL`.
+  `lsst_pipeline.def` pins `ARCHFLAGS`/`CFLAGS`/`CXXFLAGS` to
+  `-march=x86-64-v3 -mtune=generic` instead of letting gcc default to
+  `-march=native` (i.e. your specific laptop CPU), which could otherwise
+  bake in an instruction your laptop has and an S3IT node doesn't, and
+  crash with `SIGILL` there instead of failing at build time. `x86-64-v3`
+  was picked from real data, not a guess: `sinfo -o "%N %c %f"` on S3IT
+  shows every partition has `AVX512` **except** `u24-chaiam0-*` (AMD EPYC
+  7402, Zen 2), which still has AVX2/BMI2/FMA (v3) - so v3 is the highest
+  baseline safe on every listed partition, v4 would `SIGILL` on chaiam0.
+  If you know jobs using this image will never land on chaiam0 (e.g. via a
+  Slurm `--constraint`), v4 would be a safe bump there.
+
+  This was originally passed as `scons CCFLAGS=... CXXFLAGS=...`, which
+  **failed a real build** with `scons: ... Unprocessed arguments:
+  CCFLAGS=... CXXFLAGS=...` / `FATAL: ... exit status 1` - confirmed by
+  reading `sconsUtils`' source
+  ([`state.py`](https://github.com/lsst/sconsUtils/blob/main/python/lsst/sconsUtils/state.py)):
+  `CCFLAGS`/`CXXFLAGS` are not declared scons command-line `Variables` in
+  this build system at all (only `archflags`, `cc`, `debug`, `opt`, etc.
+  are), so scons rejected them outright rather than treating them as
+  compiler flags. Fixed by switching to `ARCHFLAGS` - an environment
+  variable `state.py`'s `_initEnvironment()` explicitly reads and appends
+  to `CCFLAGS`+`LINKFLAGS` - and dropping the invalid command-line
+  arguments entirely (just `scons -j"$(nproc)"` now). `CFLAGS`/`CXXFLAGS`
+  as plain env vars are kept too, since `sconsUtils` separately folds
+  those into `CCFLAGS`/`CXXFLAGS` when using conda-provided compilers -
+  redundant with `ARCHFLAGS` but harmless.
 - **`--fakeroot`/build-privilege issues, tmp/cache disk space, TMPDIR on
   NFS**: `build.sh` checks `/etc/subuid`/`/etc/subgid`, free space in the
   tmp/cache dirs apptainer will actually use, and whether they're on NFS
