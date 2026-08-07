@@ -18,10 +18,9 @@ S3IT's shared storage is confirmed CephFS (`df -T` on
 Lustre/GPFS has a dedicated metadata-server tier that heavy small-file
 access loads down.
 
-**Status: draft/testing, not validated against a real build yet, and
-deliberately not wired into `utilities/ansible/`.** Treat every command
-below as "should work" rather than "known to work" until it's actually
-been run once.
+**Status: local build succeeds and produces a working `.sif`, but this is
+still not wired into `utilities/ansible/`** and hasn't been run on S3IT
+yet. See `TODO.md` for known follow-up work.
 
 ## Layout
 
@@ -29,6 +28,7 @@ been run once.
 lsst_pipeline.def       build definition (the actual image recipe)
 build.args               default --build-arg-file values
 build.sh                  builds the .sif locally, see "Build" below
+TODO.md                   planned follow-up work
 custom/                   UZH-specific patches, not upstream LSST code
     filters.yaml              custom DECam filter band definitions
     apply_custom_filters.py   applies them to obs_decam/skymap during the build
@@ -136,111 +136,35 @@ No `module load`/`source setup_env.sh` needed - the image's
 
 ## Building locally, running on different hardware
 
-Building on your own machine and running the result on S3IT is safe
-**as long as both are x86_64 Linux** - the image's OS userland (AlmaLinux
-9, inherited from the `ghcr.io/lsst/scipipe` base image) is entirely
-self-contained inside the `.sif`, so your host distro/glibc/kernel version
-don't leak into it.
-The only things that actually need to match are CPU architecture and,
-more subtly, CPU instruction set for anything compiled locally during the
-build. `build.sh` and `lsst_pipeline.def` guard the known risks:
+Safe as long as both machines are **x86_64 Linux** - the image's OS
+userland (AlmaLinux 9, from the `ghcr.io/lsst/scipipe` base) is fully
+self-contained in the `.sif`, so only CPU architecture/instruction set
+need to match, not your host distro/glibc/kernel. `build.sh` and
+`lsst_pipeline.def` guard the known risks:
 
-- **Wrong architecture entirely** (e.g. an Apple Silicon Mac, arm64
-  Linux): `build.sh` hard-fails via a `uname -m` check before attempting
-  anything, and passes `apptainer build --arch amd64` so a mismatch can't
-  silently produce a QEMU-emulated or broken image.
-- **CPU instruction-set mismatch** on the two packages actually compiled
-  during the build (`obs_decam`, `skymap` - `lsst_distrib` itself is
-  prebuilt binaries fetched from LSST's server, not compiled locally):
-  `lsst_pipeline.def` pins `ARCHFLAGS`/`CFLAGS`/`CXXFLAGS` to
-  `-march=x86-64-v3 -mtune=generic` instead of letting gcc default to
-  `-march=native` (i.e. your specific laptop CPU), which could otherwise
-  bake in an instruction your laptop has and an S3IT node doesn't, and
-  crash with `SIGILL` there instead of failing at build time. `x86-64-v3`
-  was picked from real data, not a guess: `sinfo -o "%N %c %f"` on S3IT
-  shows every partition has `AVX512` **except** `u24-chaiam0-*` (AMD EPYC
-  7402, Zen 2), which still has AVX2/BMI2/FMA (v3) - so v3 is the highest
-  baseline safe on every listed partition, v4 would `SIGILL` on chaiam0.
-  If you know jobs using this image will never land on chaiam0 (e.g. via a
-  Slurm `--constraint`), v4 would be a safe bump there.
-
-  This was originally passed as `scons CCFLAGS=... CXXFLAGS=...`, which
-  **failed a real build** with `scons: ... Unprocessed arguments:
-  CCFLAGS=... CXXFLAGS=...` / `FATAL: ... exit status 1` - confirmed by
-  reading `sconsUtils`' source
-  ([`state.py`](https://github.com/lsst/sconsUtils/blob/main/python/lsst/sconsUtils/state.py)):
-  `CCFLAGS`/`CXXFLAGS` are not declared scons command-line `Variables` in
-  this build system at all (only `archflags`, `cc`, `debug`, `opt`, etc.
-  are), so scons rejected them outright rather than treating them as
-  compiler flags. Fixed by switching to `ARCHFLAGS` - an environment
-  variable `state.py`'s `_initEnvironment()` explicitly reads and appends
-  to `CCFLAGS`+`LINKFLAGS` - and dropping the invalid command-line
-  arguments entirely (just `scons -j"$(nproc)"` now). `CFLAGS`/`CXXFLAGS`
-  as plain env vars are kept too, since `sconsUtils` separately folds
-  those into `CCFLAGS`/`CXXFLAGS` when using conda-provided compilers -
-  redundant with `ARCHFLAGS` but harmless.
-- **`--fakeroot`/build-privilege issues, tmp/cache disk space, TMPDIR on
-  NFS**: `build.sh` checks `/etc/subuid`/`/etc/subgid`, free space in the
-  tmp/cache dirs apptainer will actually use, and whether they're on NFS
-  (fakeroot's overlay mount doesn't work there) - all as warnings, since
-  none of these are things I can verify without your machine, but they're
-  the most common reasons a fakeroot build fails partway through.
+- Wrong architecture (e.g. arm64 Mac): `build.sh` hard-fails on `uname -m`
+  and passes `apptainer build --arch amd64`.
+- CPU instruction-set mismatch on `obs_decam`/`skymap` (the only things
+  actually compiled locally - `lsst_distrib` is prebuilt): pinned to
+  `-march=x86-64-v3 -mtune=generic` via `ARCHFLAGS`/`CFLAGS`/`CXXFLAGS`,
+  chosen from real `sinfo -o "%N %c %f"` output on S3IT (every partition
+  has AVX-512 except `u24-chaiam0-*`, which still has AVX2/BMI2/FMA - v3
+  is the highest baseline safe everywhere). See `lsst_pipeline.def`'s
+  comments for why `ARCHFLAGS` specifically, not raw `scons CCFLAGS=...`
+  (the latter isn't a real scons `Variable` in `sconsUtils` and failed a
+  real build - full postmortem in git history).
+- `--fakeroot`/disk-space/NFS issues: `build.sh` checks `/etc/subuid`/
+  `/etc/subgid`, free space, and whether tmp/cache dirs are on NFS, all as
+  warnings since none of this is verifiable without your machine.
 
 ## Known gaps / things to verify on the first real build
 
-- The `dnf install` package list in `lsst_pipeline.def`'s `%post` (now
-  just `git git-lfs patch rsync findutils`, trimmed down since the base
-  image should already carry LSST's own compiler toolchain/Java/etc. for
-  `scons`) is **not verified against a real build** - the base image's
-  actual contents haven't been inspected, so this could still be missing
-  something `obs_decam`/`skymap`'s build needs.
 - `apply_custom_filters.py`'s edits reproduce the same anchors/logic as
   the ansible `blockinfile` tasks - verified against real `w.2026.30`
   clones of both repos (patches apply, all three edited files parse as
   valid Python, `SUPPORTED_FILTERS` contains the new bands at runtime),
   but the `skymap` anchor regex already broke once against upstream
   content drift (fixed - see git history) and could break again on a
-  future ref bump. See "TODO" below for a more robust alternative.
-- Apptainer is confirmed available on S3IT (`module load apptainer` gets
-  1.5.0 on a login node) - running a shipped `.sif` there needs no further
-  setup on S3IT's side.
-- Not yet checked whether S3IT's compute nodes (not just the login node)
-  have outbound internet access, network policy for pulling anything at
-  run time, or any per-user/project storage quota that 150GB+ `.sif`
-  files would need to fit inside.
+  future ref bump. See `TODO.md` for a more robust alternative.
 
-## TODO: replace the anchor-regex patching with git patch files
-
-`custom/apply_custom_filters.py` edits `obs_decam`/`skymap` by regex-
-matching anchor lines in their source (mirroring the ansible
-`blockinfile` tasks' approach) and inserting text at/after them. This
-already broke once (see "Known gaps" above - the `skymap` anchor's
-trailing `# DECam narrow-bands` comment) and is inherently fragile:
-anything upstream changes about the surrounding line silently breaks the
-match, and the failure only surfaces as an opaque "anchor not found"
-error at build time.
-
-Considered three fixes for this (reviewed in conversation, not
-implemented yet - deliberately holding off changing anything for now):
-
-1. **Git patch files** (recommended when this gets picked up): keep
-   cloning real upstream at build time as now, but replace the regex
-   edits with committed `.patch` files applied via `git apply`. Generated
-   once locally (clone, make the edit, `git diff`), then checked into
-   e.g. `custom/patches/`. No new hosting needed (unlike #2), no repo
-   bloat (unlike #3). `git apply` fails with a precise rejected-hunk diff
-   on upstream drift instead of a guessed anchor match - strictly better
-   failure mode than today, though patches are still tied to a base
-   commit and may need regenerating when `OBS_DECAM_REF`/`SKYMAP_REF`
-   bump. Costs a new local workflow step (regenerate the patch) whenever
-   `filters.yaml` changes, instead of today's "just edit the YAML" flow.
-2. **Real forks with the change committed on a branch**: fork
-   `obs_decam`/`skymap`, commit the filter changes for real, clone that
-   branch directly - no patching logic at all. Cleanest match to "local
-   copy with modifications already made," but needs hosting/maintaining
-   two forks and manually rebasing onto each new upstream tag.
-3. **Vendor the full patched source trees** into this repo, copied in via
-   `%files` instead of `git clone`d - no network dependency at build
-   time, fully reproducible regardless of upstream changes, but adds two
-   third-party source trees to this repo with no automatic upstream
-   tracking; needs manual re-vendor+re-patch on every version bump.
+See `TODO.md` for planned follow-up work.
