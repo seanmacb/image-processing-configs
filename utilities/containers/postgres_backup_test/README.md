@@ -134,16 +134,11 @@ pair files from two different runs (e.g. if one run's globals dump
 succeeded but a database's dump failed, per `butler_pg_backup.sh`'s
 `FAILURES` handling).
 
-## Comparing against the live database
+### Live-database comparison (planned)
 
-**Not implemented yet.** Intended shape: given `LIVE_HOST` (+ role/db/
-`.pgpass` auth, same pattern as
-`../../postgres-setup/utilities/test_butler_postgres.py`), connect out to
-the live database and compare something cheap per table - e.g. row counts
-- against the restored copy. Needs to account for the live database having
-moved on since the dump (`>=`, not `==`, is expected). `restore_and_verify.sh`
-currently fails loudly if `LIVE_HOST` is set, so this gap can't be
-silently skipped later.
+`LIVE_HOST` is recognized but not implemented - `restore_and_verify.sh`
+fails loudly if it's set, so that gap can't be silently skipped. See
+`TODO.md`.
 
 ## Known gaps
 
@@ -151,4 +146,6 @@ silently skipped later.
   `butler_pg_backup.sh` produces today - no point-in-time/WAL-based
   recovery, since this Postgres setup doesn't do that (see
   `postgres-setup/README.md`'s "Backups" section).
-- Live-database comparison (above).
+
+See `TODO.md` for planned follow-up work (live-database comparison,
+Butler-level registry checks).
