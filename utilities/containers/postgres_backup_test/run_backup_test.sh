@@ -13,8 +13,8 @@
 # copy, e.g. via ../../postgres-setup/utilities/pull_butler_backups.sh) -
 # bind-mounted READ-ONLY. With no database names given, every database
 # with a dump for the chosen backup run is restored; set BACKUP_TIMESTAMP
-# to pick a specific run (see restore_and_verify.sh). Set LOG_DIR to a host
-# path to keep the restore logs (WORKDIR itself dies with the container).
+# to pick a specific run (see restore_and_verify.sh). LOG_DIR: host path
+# for restore logs, written directly there to survive a kill mid-restore.
 #
 # PGDATA/socket/logs live on Apptainer's "sessiondir" tmpfs, which defaults
 # to 64MiB (apptainer.conf(5)) - far too small for a real restore, and not

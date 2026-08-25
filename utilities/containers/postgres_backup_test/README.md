@@ -82,7 +82,7 @@ Env vars:
 | `SIF` | newest `postgres_backup_test_pg*.sif` next to this script | image to run |
 | `BACKUP_TIMESTAMP` | most recent `globals_*.sql` found | which backup run to restore (must match `butler_pg_backup.sh`'s `TIMESTAMP`, e.g. `20260101-030000`) |
 | `SCRATCH_TMPFS_MIB` | `8192` | size (MiB) of the RAM-backed scratch space inside the container - raise for a larger registry |
-| `LOG_DIR` | unset (logs stay only in the container, lost on exit) | host directory to copy restore logs into before the container tears down |
+| `LOG_DIR` | unset (logs live only in the container, lost on exit) | host directory bind-mounted in; restore logs are written there directly (not copied out afterward), so they survive a kill mid-restore |
 | `APPTAINER_SYSTEM_CONF` | auto-detected (`/etc/apptainer/apptainer.conf` or `/usr/local/etc/apptainer/apptainer.conf`) | path to the real system `apptainer.conf`, if elsewhere |
 
 Must run as a normal (non-root) user - PostgreSQL refuses to

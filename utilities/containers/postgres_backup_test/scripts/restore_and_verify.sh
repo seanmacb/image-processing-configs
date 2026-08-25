@@ -10,11 +10,11 @@
 # unix-socket-only PostgreSQL instance and prints a summary of what
 # landed, without ever touching the live database.
 #
-# PGDATA/socket/logs live under mktemp -d on the container's writable
-# overlay, sized by run_backup_test.sh (see its header comment). This
-# script does not stop PostgreSQL - `apptainer exec` tears the whole
-# container down on exit; `apptainer shell` leaves it running for manual
-# inspection at $SOCKET_DIR until you exit the shell.
+# PGDATA/socket live under mktemp -d on the container's writable overlay,
+# sized by run_backup_test.sh. Restore logs go to PG_TEST_LOG_DIR when set
+# (LOG_DIR), else next to PGDATA - only the former survives the container
+# exiting. `apptainer exec` tears PostgreSQL down on exit; `apptainer
+# shell` leaves it running at $SOCKET_DIR until you exit.
 #
 # USAGE (normally invoked via run_backup_test.sh):
 #   restore_and_verify.sh <backup_dir> [database ...]
@@ -107,13 +107,16 @@ PGDATA="${WORKDIR}/pgdata"
 SOCKET_DIR="${WORKDIR}/socket"
 mkdir -p "${SOCKET_DIR}"
 
+# See header comment.
+LOGDIR="${PG_TEST_LOG_DIR:-${WORKDIR}}"
+
 log "Initializing throwaway PGDATA at ${PGDATA} (superuser named 'postgres', matching the source cluster)"
 # trust is fine here (unix-socket-only, no network); peer auth would
 # require the OS user running this script to literally be named 'postgres'.
 initdb -D "${PGDATA}" --username=postgres --auth=trust --no-instructions >/dev/null
 
 log "Starting PostgreSQL (unix socket only, no TCP listener - never exposed on the network)"
-pg_ctl -D "${PGDATA}" -w -l "${WORKDIR}/postgres.log" \
+pg_ctl -D "${PGDATA}" -w -l "${LOGDIR}/postgres.log" \
     -o "-c listen_addresses='' -c unix_socket_directories=${SOCKET_DIR}" start
 
 PSQL_ADMIN=(psql -h "${SOCKET_DIR}" -U postgres -X -q)
@@ -122,8 +125,8 @@ PSQL_ADMIN=(psql -h "${SOCKET_DIR}" -U postgres -X -q)
 # cluster (see --username=postgres above) - the same role skew
 # butler_pg_backup.sh already documents as acceptable.
 log "Restoring globals from ${GLOBALS_FILE}"
-"${PSQL_ADMIN[@]}" -d postgres -f "${GLOBALS_FILE}" > "${WORKDIR}/globals_restore.log" 2>&1 || true
-log "Globals restore log: ${WORKDIR}/globals_restore.log ($(wc -l < "${WORKDIR}/globals_restore.log") line(s) - some are expected, see comment above)"
+"${PSQL_ADMIN[@]}" -d postgres -f "${GLOBALS_FILE}" > "${LOGDIR}/globals_restore.log" 2>&1 || true
+log "Globals restore log: ${LOGDIR}/globals_restore.log ($(wc -l < "${LOGDIR}/globals_restore.log") line(s) - some are expected, see comment above)"
 
 OVERALL_STATUS=0
 
@@ -193,7 +196,7 @@ for db in "${DATABASES[@]}"; do
     # initdb already creates a database named 'postgres' - butler_pg_backup.sh
     # backs that one up too (it holds the monitoring schema), so restoring
     # it hits an "already exists" here rather than needing CREATE DATABASE.
-    CREATEDB_LOG="${WORKDIR}/${db}_createdb.log"
+    CREATEDB_LOG="${LOGDIR}/${db}_createdb.log"
     if ! "${PSQL_ADMIN[@]}" -d postgres -c "CREATE DATABASE \"${db}\";" >/dev/null 2>"${CREATEDB_LOG}"; then
         if ! grep -q "already exists" "${CREATEDB_LOG}"; then
             log "FAILED: could not create database '${db}':"
@@ -204,15 +207,14 @@ for db in "${DATABASES[@]}"; do
         log "'${db}' already exists (e.g. initdb's own default 'postgres') - restoring into it as-is"
     fi
 
-    RESTORE_LOG="${WORKDIR}/${db}_restore.log"
+    RESTORE_LOG="${LOGDIR}/${db}_restore.log"
     if pg_restore -h "${SOCKET_DIR}" -U postgres -d "${db}" "${DUMP_FILE}" > "${RESTORE_LOG}" 2>&1; then
         log "pg_restore reported no errors for '${db}'"
     else
         # Not fatal by itself: pg_restore exits non-zero on any error,
         # including the benign role/ownership skew butler_pg_backup.sh
         # already documents as acceptable. Judged from the data summary
-        # below, not this exit status. Printed here rather than by path
-        # since WORKDIR disappears with the container on exit.
+        # below, not this exit status.
         log "WARNING: pg_restore reported error(s) for '${db}':"
         sed 's/^/    /' "${RESTORE_LOG}"
     fi
@@ -228,13 +230,6 @@ if [[ "${OVERALL_STATUS}" -eq 0 ]]; then
     log "=== Backup test finished: all requested databases restored with data present ==="
 else
     log "=== Backup test finished with problems - see WARNING/FAILED lines above ==="
-fi
-
-# WORKDIR's logs disappear with the container - copy them out if
-# run_backup_test.sh bind-mounted a host directory for them (LOG_DIR).
-if [[ -n "${PG_TEST_LOG_DIR:-}" && -d "${PG_TEST_LOG_DIR}" ]]; then
-    cp "${WORKDIR}"/*.log "${PG_TEST_LOG_DIR}/"
-    log "Copied restore logs to ${PG_TEST_LOG_DIR} (host: \$LOG_DIR)"
 fi
 
 log "PostgreSQL is still running (socket: ${SOCKET_DIR}) - if you're in an" \
