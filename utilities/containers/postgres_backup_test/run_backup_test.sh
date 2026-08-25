@@ -13,7 +13,8 @@
 # copy, e.g. via ../../postgres-setup/utilities/pull_butler_backups.sh) -
 # bind-mounted READ-ONLY. With no database names given, every database
 # with a dump for the chosen backup run is restored; set BACKUP_TIMESTAMP
-# to pick a specific run (see restore_and_verify.sh).
+# to pick a specific run (see restore_and_verify.sh). Set LOG_DIR to a host
+# path to keep the restore logs (WORKDIR itself dies with the container).
 #
 # PGDATA/socket/logs live on Apptainer's "sessiondir" tmpfs, which defaults
 # to 64MiB (apptainer.conf(5)) - far too small for a real restore, and not
@@ -56,6 +57,15 @@ if [[ ! -d "${BACKUP_DIR}" ]]; then
 fi
 BACKUP_DIR="$(cd "${BACKUP_DIR}" && pwd)"
 
+# Optional: persist restore logs to a real host directory - WORKDIR itself
+# disappears with the container otherwise.
+LOG_BIND_ARGS=()
+if [[ -n "${LOG_DIR:-}" ]]; then
+    mkdir -p "${LOG_DIR}"
+    LOG_DIR="$(cd "${LOG_DIR}" && pwd)"
+    LOG_BIND_ARGS=(--bind "${LOG_DIR}:/logs" --env "PG_TEST_LOG_DIR=/logs")
+fi
+
 # Raise this for a bigger backup - see header comment.
 SCRATCH_TMPFS_MIB="${SCRATCH_TMPFS_MIB:-8192}"
 
@@ -92,4 +102,5 @@ fi
 APPTAINER_CONFIG_FILE="${CUSTOM_CONF}" \
     apptainer exec --writable-tmpfs --no-mount tmp \
         --bind "${BACKUP_DIR}:/backups:ro" \
+        "${LOG_BIND_ARGS[@]}" \
         "${SIF}" /opt/postgres_backup_test/restore_and_verify.sh /backups "$@"

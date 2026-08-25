@@ -190,7 +190,19 @@ for db in "${DATABASES[@]}"; do
     fi
 
     log "Restoring '${db}' from ${DUMP_FILE}"
-    "${PSQL_ADMIN[@]}" -d postgres -c "CREATE DATABASE \"${db}\";" >/dev/null
+    # initdb already creates a database named 'postgres' - butler_pg_backup.sh
+    # backs that one up too (it holds the monitoring schema), so restoring
+    # it hits an "already exists" here rather than needing CREATE DATABASE.
+    CREATEDB_LOG="${WORKDIR}/${db}_createdb.log"
+    if ! "${PSQL_ADMIN[@]}" -d postgres -c "CREATE DATABASE \"${db}\";" >/dev/null 2>"${CREATEDB_LOG}"; then
+        if ! grep -q "already exists" "${CREATEDB_LOG}"; then
+            log "FAILED: could not create database '${db}':"
+            sed 's/^/    /' "${CREATEDB_LOG}"
+            OVERALL_STATUS=1
+            continue
+        fi
+        log "'${db}' already exists (e.g. initdb's own default 'postgres') - restoring into it as-is"
+    fi
 
     RESTORE_LOG="${WORKDIR}/${db}_restore.log"
     if pg_restore -h "${SOCKET_DIR}" -U postgres -d "${db}" "${DUMP_FILE}" > "${RESTORE_LOG}" 2>&1; then
@@ -216,6 +228,13 @@ if [[ "${OVERALL_STATUS}" -eq 0 ]]; then
     log "=== Backup test finished: all requested databases restored with data present ==="
 else
     log "=== Backup test finished with problems - see WARNING/FAILED lines above ==="
+fi
+
+# WORKDIR's logs disappear with the container - copy them out if
+# run_backup_test.sh bind-mounted a host directory for them (LOG_DIR).
+if [[ -n "${PG_TEST_LOG_DIR:-}" && -d "${PG_TEST_LOG_DIR}" ]]; then
+    cp "${WORKDIR}"/*.log "${PG_TEST_LOG_DIR}/"
+    log "Copied restore logs to ${PG_TEST_LOG_DIR} (host: \$LOG_DIR)"
 fi
 
 log "PostgreSQL is still running (socket: ${SOCKET_DIR}) - if you're in an" \
