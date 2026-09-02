@@ -30,8 +30,8 @@ dataset_type: injection_catalog
 # footprint you intend to process: injectVisit pulls whole HTM7 trixels
 # (~0.315 deg^2 each), and sources outside the detector are simply not drawn.
 sky:
-  ra_lim: [149.0, 151.0]
-  dec_lim: [1.0, 3.0]
+  ra_lim: [0,360]
+  dec_lim: [-90., 90]
 
 # Sources per square degree, per band.
 density: 2000
@@ -59,10 +59,10 @@ defaults:
 # These are starting values: retune them to the pilot's actual exposure times.
 bands:
   g:
-    mag_lim: [20.5, 24.5]
+    mag_lim: [15, 24]
   r:
-    mag_lim: [20.3, 24.3]
+    mag_lim: [15, 24]
   i:
-    mag_lim: [19.8, 23.8]
+    mag_lim: [15, 24]
   z:
-    mag_lim: [19.3, 23.3]
+    mag_lim: [15, 24]
