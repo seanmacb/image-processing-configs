@@ -1,0 +1,6 @@
+description: DESGW pilot template building pipeline for DECam
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $AP_PIPE_DIR/pipelines/DECam/QuickTemplate.yaml

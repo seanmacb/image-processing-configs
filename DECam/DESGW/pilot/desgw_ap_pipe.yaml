@@ -1,0 +1,89 @@
+description: |
+  DESGW pilot AP pipeline for DECam, with synthetic/fake source injection.
+  Templates are inputs.
+
+  This is $AP_PIPE_DIR/pipelines/DECam/ApPipeWithFakes.yaml with solar system
+  association removed. Moving objects are still rejected -- filterDiaSource
+  keeps its trailed-source filter -- but nothing is associated against, or
+  characterized as, a solar system object. Concretely:
+
+    * mpSkyEphemerisQuery is excluded from the import. Its only consumer was
+      associateApdb.solarSystemObjectTable.
+    * associateApdb.doSolarSystemAssociation is false, which disconnects the
+      solarSystemObjectTable input and the associatedSsSources /
+      unassociatedSsObjects outputs.
+    * getRegionTimeFromVisit is kept: it also feeds loadDiaCatalogs.
+
+  analyzeDiaSourceAssociationMetrics still reports numTotalSolarSystemObjects
+  and numAssociatedSsObjects; with association off DiaPipelineTask records
+  them as zero rather than omitting them, so the metric task is unaffected.
+
+  Remember:
+  (0) Ensure median calibration products and goodSeeing template coadds exist
+      for the data being processed.
+  (1) Run step0_test.yaml (isrForCrosstalkSources) to produce the 'overscanRaw'
+      crosstalk sources that this pipeline's isr step consumes.
+  (2) Create the APDB, e.g.
+        apdb-cli create-sql "sqlite:////path/to/association.db" apdb_config.yaml
+        apdb-cli metadata set apdb_config.yaml instrument DECam
+  (3) Create and ingest the 'injection_catalog' that injectVisit consumes,
+      using the lsst.source.injection command-line tools:
+        ./make_injection_catalog.sh --outdir ./injection_catalogs
+        ./ingest_injection_catalog.sh -b $REPO -o <injection collection>
+      Parameters live in desgw_injection_catalog.yaml. injection_catalogs is a
+      prerequisite input, resolved at QuantumGraph build time, so this must be
+      done before this pipeline is run at all -- well before injectedMatchDiaSrc.
+  (4) Run this pipeline, setting the apdb_config parameter to point at the file
+      written in (2):
+        pipetask run -b $REPO -p desgw_ap_pipe.yaml#apPipe \
+          -i <inputs>,<injection catalog collection> -o <output collection> \
+          -c 'parameters:apdb_config=/path/to/apdb_config.yaml'
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $AP_PIPE_DIR/pipelines/DECam/ApPipeWithFakes.yaml
+    exclude:
+      - mpSkyEphemerisQuery
+    # EDIT rather than the default DROP: the 'apPipe' and 'preload' subsets
+    # list mpSkyEphemerisQuery, and under DROP those subsets would be discarded
+    # wholesale instead of simply losing that one label.
+    labeledSubsetModifyMode: EDIT
+
+parameters:
+  coaddName: goodSeeing
+  # APDB config file must be user-specified; see note (4) above.
+  apdb_config: TBD
+
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      # Crosstalk sources come from the overscan-only ISR run in step0
+      # (isrForCrosstalkSources), which writes 'overscanRaw'. IsrTask's own
+      # default for this connection is 'isrOverscanCorrected'.
+      connections.crosstalkSources: overscanRaw
+
+  calibrateImage:
+    class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
+    config:
+      # CalibrateImageTask subsumes the old characterizeImage/calibrate pair,
+      # so the DESGW reference catalog choices go here.
+      connections.astrometry_ref_cat: gaia_dr3
+      connections.photometry_ref_cat: ps1_pv3_3pi
+
+  filterDiaSource:
+    class: lsst.ap.association.FilterDiaSourceCatalogTask
+    config:
+      # Moving-object rejection, kept on deliberately. Sources whose trail is
+      # longer than max_trail_length * exposureTime are dropped from the DIA
+      # source catalog; max_trail_length defaults to ~0.4167 arcsec/s, i.e. the
+      # DMTN-199 requirement of 10 deg/day.
+      doTrailedSourceFilter: true
+
+  associateApdb:
+    class: lsst.ap.association.DiaPipelineTask
+    config:
+      # No solar system association: we reject fast movers upstream in
+      # filterDiaSource and do not attempt to characterize them here.
+      doSolarSystemAssociation: false

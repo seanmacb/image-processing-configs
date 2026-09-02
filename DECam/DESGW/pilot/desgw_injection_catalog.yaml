@@ -1,0 +1,68 @@
+# DESGW pilot -- synthetic source injection catalog definition.
+#
+# This is NOT a pipeline file. It is the parameter set for the source_injection
+# command-line tools documented at
+#   https://pipelines.lsst.io/modules/lsst.source.injection/index.html
+# and is consumed by the two scripts in this directory:
+#
+#   make_injection_catalog.sh    -> generate_injection_catalog  (one call per band)
+#   ingest_injection_catalog.sh  -> ingest_injection_catalog    (one call per band)
+#
+# Together those cover steps 2 and 3 of the source_injection Quick Reference
+# Guide ("Generate an Injection Catalog", "Ingest an Injection Catalog"). The
+# result is the 'injection_catalog' dataset (dimensions htm7 + band, storage
+# class ArrowAstropy) that injectVisit in desgw_ap_pipe.yaml consumes as a
+# prerequisite input.
+#
+# A previous version of this file drove
+# lsst.ap.pipe.createApFakes.CreateVisitDetectorFakesTask instead. That task is
+# not part of source_injection and does not exist in lsst-scipipe-13.0.1, so it
+# has been replaced by the documented CLI route.
+
+# Output dataset type name. 'injection_catalog' is the source_injection
+# convention and is what VisitInjectTask looks for; override only if you are
+# deliberately keeping parallel catalogs in one collection.
+dataset_type: injection_catalog
+
+# Sky region the fakes are drawn over, in degrees. Positions come from a
+# quasi-random Halton sequence, so the same limits always reproduce the same
+# positions unless 'seed' is set. Make this comfortably larger than the
+# footprint you intend to process: injectVisit pulls whole HTM7 trixels
+# (~0.315 deg^2 each), and sources outside the detector are simply not drawn.
+sky:
+  ra_lim: [149.0, 151.0]
+  dec_lim: [1.0, 3.0]
+
+# Sources per square degree, per band.
+density: 2000
+
+# Halton sequence seed. null -> derived from the RA/Dec limit ranges, which
+# means every band gets identical positions. Set an integer to override.
+seed: null
+
+# Applied to every band unless the band overrides them.
+defaults:
+  # Injected profile. 'DeltaFunction' is a point source convolved with the
+  # image PSF, which is what a kilonova or SN looks like at DECam resolution.
+  # Run `show_source_types` for the full list (Sersic, Gaussian, Star, ...).
+  parameters:
+    source_type: [DeltaFunction]
+
+# One entry per band. Each becomes its own generate_injection_catalog call and
+# its own ingest_injection_catalog call, so the magnitude range -- and hence
+# the color of the injected population -- can differ band to band.
+#
+# The ranges below bracket typical DECam single-epoch 5-sigma depths (roughly
+# g~23.5, r~23.3, i~22.8, z~22.3 for a ~90s exposure), running ~3 mag brighter
+# to ~1 mag fainter so that the recovery curves produced by
+# analyzeDiaFakesDetectorVisitCore straddle the detection limit in every band.
+# These are starting values: retune them to the pilot's actual exposure times.
+bands:
+  g:
+    mag_lim: [20.5, 24.5]
+  r:
+    mag_lim: [20.3, 24.3]
+  i:
+    mag_lim: [19.8, 23.8]
+  z:
+    mag_lim: [19.3, 23.3]
