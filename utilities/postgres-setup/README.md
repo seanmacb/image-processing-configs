@@ -107,7 +107,14 @@ psql -f /mnt/pgdata/backups/postgresql/globals_<timestamp>.sql
 ```
 
 Test a restore at least once against a scratch database -- a dump file
-existing is not the same as it being restorable.
+existing is not the same as it being restorable. This is automated in
+`../containers/postgres_backup_test/` -- an Apptainer image that restores
+a backup run into a throwaway, local-only Postgres instance and prints a
+summary of what landed, without touching the live database:
+
+```bash
+../containers/postgres_backup_test/run_backup_test.sh /mnt/pgdata/backups/postgresql
+```
 
 
 ### Off-instance copy
