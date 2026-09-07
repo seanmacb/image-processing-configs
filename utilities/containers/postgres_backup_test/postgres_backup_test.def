@@ -1,0 +1,44 @@
+Bootstrap: docker
+From: postgres:{{ PG_MAJOR }}
+
+# postgres_backup_test.def
+#
+# One-shot Apptainer job for restore-testing a butler_pg_backup.sh backup
+# (see ../../postgres-setup/scripts/butler_pg_backup.sh) - never a
+# persistent service. See run_backup_test.sh/README.md for the invocation
+# and RAM-scratch sizing.
+#
+# Built FROM the official postgres image, which already ships
+# initdb/pg_ctl/psql/pg_restore for the pinned major version.
+#
+# Build: apptainer build --fakeroot --build-arg-file build.args \
+#     postgres_backup_test_pg<PG_MAJOR>.sif postgres_backup_test.def
+
+%arguments
+    PG_MAJOR=17
+
+%files
+    scripts/restore_and_verify.sh /opt/postgres_backup_test/restore_and_verify.sh
+
+%post
+    set -eo pipefail
+
+    # findutils may be missing on the base image; installing it if already
+    # present is a harmless no-op.
+    apt-get update
+    apt-get install -y --no-install-recommends findutils
+    rm -rf /var/lib/apt/lists/*
+
+    chmod +x /opt/postgres_backup_test/restore_and_verify.sh
+
+%environment
+    # Guarantees initdb/pg_ctl/psql/pg_restore are on PATH regardless of how
+    # Apptainer imports the base image's own Docker ENV.
+    export PATH="/usr/lib/postgresql/{{ PG_MAJOR }}/bin:${PATH}"
+
+%runscript
+    exec /opt/postgres_backup_test/restore_and_verify.sh "$@"
+
+%labels
+    org.lsst.pg_major {{ PG_MAJOR }}
+    org.lsst.base_image postgres:{{ PG_MAJOR }}

@@ -1,0 +1,4 @@
+# Must be the same as, or newer than, the PostgreSQL major version that
+# wrote the dumps being tested - check the source instance with
+# `pg_lsclusters`.
+PG_MAJOR=17
