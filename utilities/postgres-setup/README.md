@@ -178,7 +178,9 @@ Nothing to install: copy the two files to the instance and run them.
   data-volume space + used %, and data-volume disk I/O (read/write KB/s and
   busy %, from `/proc/diskstats`).
 - **Cluster**: client-backend count vs `max_connections` (default 100 —
-  likely the first ceiling under many parallel `pipetask` jobs), how many are
+  likely the first ceiling under many parallel `pipetask` jobs; see
+  `examples/conf.d/10-butler-max-connections.conf.example` to raise it to 300),
+  how many are
   active / idle / idle-in-transaction / blocked on a lock, age of the oldest
   transaction / longest active query / longest idle-in-transaction, running
   autovacuum workers, cumulative WAL bytes (delta = write pressure), and the
