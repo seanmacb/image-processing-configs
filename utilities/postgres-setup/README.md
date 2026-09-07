@@ -145,3 +145,102 @@ See the script's own header comment for the full env var list (`DEST_DIR`,
 `RETENTION_DAYS`, `SSH_OPTS`, ...) and an example crontab entry -- it also
 reports how many *new* backup files were pulled each run, so a `MAILTO`'d
 cron doubles as a daily "did the backup actually run" check.
+
+## Monitoring & Load Testing
+
+To check whether the instance holds up under load, there is a lightweight,
+**read-only** sampler that appends OS + PostgreSQL saturation signals to CSV
+files. Analyse a run afterwards with a small pandas script.
+
+It does **not** modify the database in any way — no extensions, no
+`postgresql.conf` changes, **no restart**, no schema, nothing to undo. Every
+`psql` session runs with `default_transaction_read_only = on` plus short
+`statement_timeout` / `lock_timeout`, so it cannot write, cannot hold a lock,
+and cannot stall a sample. It connects as the local `postgres` superuser over
+the Unix socket only (needed for full `pg_stat_activity` visibility), so it
+adds **no new network attack surface**.
+
+### Files (in `scripts/`)
+
+| File | Role |
+|---|---|
+| `butler_pg_monitor.sh` | The sampler. `--loop` writes CSV rows every `INTERVAL` s; `mark "text"` annotates the active run |
+| `butler_pg_report.py` | Reads a run's CSVs (pandas) and prints peak gauges + per-DB counter deltas over a chosen window |
+
+Nothing to install: copy the two files to the instance and run them.
+
+### What it samples (every 15 s by default)
+
+`instance_<date>.csv` — one row per sample:
+
+- **OS**: load average vs `nproc`, CPU-busy %, PSI pressure
+  (`/proc/pressure/{cpu,memory,io}`), total / available RAM, swap used,
+  data-volume space + used %, and data-volume disk I/O (read/write KB/s and
+  busy %, from `/proc/diskstats`).
+- **Cluster**: client-backend count vs `max_connections` (default 100 —
+  likely the first ceiling under many parallel `pipetask` jobs), how many are
+  active / idle / idle-in-transaction / blocked on a lock, age of the oldest
+  transaction / longest active query / longest idle-in-transaction, running
+  autovacuum workers, cumulative WAL bytes (delta = write pressure), and the
+  oldest `datfrozenxid` age (wraparound headroom).
+
+`database_<date>.csv` — one row per database per sample: the raw cumulative
+`pg_stat_database` counters (commits, rollbacks, block hits / reads, tuples
+in / out / changed, temp-file spills, deadlocks) plus `numbackends`. Deltas
+are computed at report time. `blk_read_time` / `blk_write_time` are logged
+but only non-zero if you separately enable `track_io_timing` (the sampler
+does not).
+
+Every column of both files is documented in
+[`docs/monitoring-csv-columns.md`](docs/monitoring-csv-columns.md).
+
+### Output layout
+
+Each `--loop` run creates a fresh directory so runs never mix; a run crossing
+UTC midnight rolls over to a new dated file in the same directory:
+
+```
+pgmon/
+  run_20260907T101500Z/
+    instance_20260907.csv
+    database_20260907.csv
+    markers.csv
+  latest -> run_20260907T101500Z      # where `mark` writes
+```
+
+Files are tiny; prune old `run_*` directories by hand when done.
+
+### Running a load test
+
+```bash
+# On the instance, inside `screen` so an SSH drop doesn't kill it — keep this
+# running for the whole test (detach: Ctrl-A D; reattach: screen -r pgmon):
+screen -S pgmon
+sudo MONITOR_DIR=~/pgmon INTERVAL=15 DATA_MOUNT=/mnt/pgdata \
+    ./butler_pg_monitor.sh --loop
+
+# In another shell, bracket the test:
+sudo MONITOR_DIR=~/pgmon ./butler_pg_monitor.sh mark "decam ingest run 1 START"
+# ... drive load against the Butler DBs from wherever ...
+sudo MONITOR_DIR=~/pgmon ./butler_pg_monitor.sh mark "decam ingest run 1 END"
+
+# Then, anywhere with pandas (matplotlib only for --plot):
+python butler_pg_report.py ~/pgmon/latest                         # whole run
+python butler_pg_report.py ~/pgmon/latest --label "run 1 START"   # marker -> next marker
+python butler_pg_report.py ~/pgmon/latest --since 30min
+python butler_pg_report.py ~/pgmon/latest --from 2026-09-07T10:00Z --to 2026-09-07T11:00Z
+python butler_pg_report.py ~/pgmon/latest --plot run1.png
+```
+
+The report prints the window, worst-case saturation gauges (peak connections
+vs the limit, load-per-core, peak CPU %, PSI, min free RAM, swap used, peak
+disk I/O, data-volume growth, WAL written, longest query / transaction, lock
+waits) and per-database counter deltas (commits, cache-hit %, tuples changed,
+temp spill, deadlocks). A sample the sampler couldn't complete is classified
+in the `pg_status` column: a genuine connect failure (`pg_up = 0`) is reported
+separately from hitting the connection ceiling or a sample-query timeout —
+those mean the server is up and the test found a limit, not an outage.
+
+> **Note:** This reveals behaviour *under load you generate* — not long-term
+> extrapolation. Run a representative ingest/query batch to see where the
+> connection / CPU / RAM / I/O ceilings actually are.

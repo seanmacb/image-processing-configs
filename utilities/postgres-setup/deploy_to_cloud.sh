@@ -10,6 +10,8 @@
 #   - scripts/setup_butler_backups.sh
 #   - scripts/butler_pg_backup.sh
 #   - scripts/test_butler_postgres.sh
+#   - scripts/butler_pg_monitor.sh
+#   - scripts/butler_pg_report.py
 #   - configs/uzh-butler-postgres-databases.conf
 #   - configs/uzh-butler-postgres-pull-keys.conf
 #
@@ -30,6 +32,8 @@ FILES=(
     "$SCRIPT_DIR/scripts/setup_butler_backups.sh"
     "$SCRIPT_DIR/scripts/butler_pg_backup.sh"
     "$SCRIPT_DIR/scripts/test_butler_postgres.sh"
+    "$SCRIPT_DIR/scripts/butler_pg_monitor.sh"
+    "$SCRIPT_DIR/scripts/butler_pg_report.py"
     "$SCRIPT_DIR/configs/uzh-butler-postgres-databases.conf"
     "$SCRIPT_DIR/configs/uzh-butler-postgres-pull-keys.conf"
 )
