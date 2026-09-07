@@ -109,7 +109,7 @@ PULL_KEYS_FILE="${1:-${PULL_KEYS_FILE:-pull_authorized_keys.conf}}"
 SUDOERS_FILE="/etc/sudoers.d/butler-backup-pull"
 
 # Directory this script lives in, so we can install its sibling worker
-# script (same pattern as setup_butler_monitoring.sh).
+# script (same pattern as setup_butler_postgres.sh).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------------------------------------------------------------------------

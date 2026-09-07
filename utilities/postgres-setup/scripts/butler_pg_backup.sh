@@ -172,8 +172,7 @@ fi
 
 # --- Per-database dumps ------------------------------------------------------
 # datistemplate = false excludes template0/template1 but keeps the 'postgres'
-# maintenance DB, which also holds the monitoring schema (see
-# setup_butler_monitoring.sh) -- worth backing up too, and it costs nothing.
+# maintenance DB -- worth backing up too, and it costs nothing.
 if ! DB_LIST_RAW="$(psql -tAc "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname;")"; then
     log "ERROR: failed to list databases via psql"
     exit 1
