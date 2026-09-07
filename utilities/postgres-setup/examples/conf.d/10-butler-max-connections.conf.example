@@ -1,0 +1,35 @@
+# PostgreSQL drop-in override: raise max_connections for the Butler registry.
+#
+# Debian's postgresql.conf ends with `include_dir 'conf.d'`, so files placed in
+#   /etc/postgresql/<version>/main/conf.d/
+# whose name ends in `.conf` are read AFTER the main file, in alphabetical
+# order, and the last assignment of a setting wins. The `10-` prefix just keeps
+# ordering predictable if more drop-ins are added later.
+#
+# INSTALL (on the instance):
+#   sudo install -o postgres -g postgres -m 0644 \
+#     10-butler-max-connections.conf.example \
+#     /etc/postgresql/$(pg_lsclusters -h | awk 'NR==1{print $1}')/main/conf.d/10-butler-max-connections.conf
+#
+# APPLY: max_connections is a postmaster-level setting -- it sizes shared
+# memory at startup and CANNOT be applied with a reload/SIGHUP. A restart is
+# required:
+#   sudo systemctl restart postgresql@$(pg_lsclusters -h | awk 'NR==1{print $1}')-main
+# This is a fast restart (~1-2 s); existing sessions are dropped and must
+# reconnect. Do it between load-test runs, not during one.
+#
+# VERIFY:
+#   sudo -u postgres psql -c "SHOW max_connections;"
+#   sudo -u postgres psql -c "SELECT name, setting, pending_restart FROM pg_settings WHERE name='max_connections';"
+#
+# REVERT: delete this file and restart again.
+#
+# CONTEXT: 300 gives headroom over the default 100 for bursts of parallel
+# pipetask/BPS jobs without a large memory footprint (each backend costs a few
+# MB baseline plus work_mem per sort/hash node). It is a safety ceiling, not a
+# capacity plan: if real client concurrency approaches it, put a connection
+# pooler (PgBouncer, transaction mode) in front rather than raising this
+# further. `superuser_reserved_connections` (default 3) and, on PG16+,
+# `reserved_connections` come off the top of this number.
+
+max_connections = 300

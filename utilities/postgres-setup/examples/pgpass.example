@@ -1,0 +1,9 @@
+# PostgreSQL password file for the Butler registries on the ScienceCloud
+#
+# Install on each client machine as ~/.pgpass and lock it down:
+#   cp pgpass.example ~/.pgpass
+#   chmod 0600 ~/.pgpass        # libpq REFUSES to use it if it's group/world readable
+#
+# Format (one connection per line, no spaces):
+#   hostname:port:database:username:password
+[IP]:5432:[DB-NAME]:[DB-USER]:[PASSWORD]
