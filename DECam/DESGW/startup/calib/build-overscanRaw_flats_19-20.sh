@@ -1,0 +1,25 @@
+#!/usr/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=30
+#SBATCH --mem=116GB
+#SBATCH --time=48:00:00
+#SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/overscanRaw_19-20_%j.out
+#SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/overscanRaw_19-20_%j.err
+
+source /shares/soares-santos.physik.uzh/repos/Butler-imports/s3it_setup/DESGW_CONFIGS
+module load miniforge3
+source /shares/soares-santos.physik.uzh/envs/lsst_stack/loadLSST.sh
+setup lsst_distrib -c
+
+LOGFILE=$LOGDIR/overscanRaw_flat_19-20.log
+
+date | tee $LOGFILE
+pipetask --long-log run --register-dataset-types -j 30 \
+-b $REPO --instrument lsst.obs.decam.DarkEnergyCamera \
+-i DECam/raw/all,DECam/calib/curated/19700101T000000Z,DECam/calib/unbounded,DECam/calib \
+-o DECam/calib/template/overscanRaw/19-20 \
+-p $CP_PIPE_DIR/pipelines/DECam/RunIsrForCrosstalkSources.yaml \
+-d "instrument='DECam' AND exposure.observation_type='dome flat' AND exposure.day_obs >= 20190000 AND exposure.day_obs <= 20209999" \
+2>&1 | tee -a $LOGFILE
+date | tee -a $LOGFILE

@@ -69,8 +69,14 @@ tasks:
     config:
       # CalibrateImageTask subsumes the old characterizeImage/calibrate pair,
       # so the DESGW reference catalog choices go here.
-      connections.astrometry_ref_cat: gaia_dr3
-      connections.photometry_ref_cat: ps1_pv3_3pi
+      #
+      # the_monster_20250219 (DMTN-277) carries both: Gaia DR3 astrometry
+      # (coord_ra/dec, pm_ra/dec, parallax -- the same fields gaia_dr3 has)
+      # plus synthetic ugrizy fluxes per camera system in the same rows, so
+      # one dataset type serves both connections. For DECam, use the DES
+      # synthetic photometry (monster_DES_*), the closest filter match.
+      connections.astrometry_ref_cat: the_monster_20250219
+      connections.photometry_ref_cat: the_monster_20250219
 
   filterDiaSource:
     class: lsst.ap.association.FilterDiaSourceCatalogTask

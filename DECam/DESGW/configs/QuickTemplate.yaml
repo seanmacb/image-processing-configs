@@ -1,0 +1,36 @@
+description: DESGW pilot template building pipeline for DECam
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $AP_PIPE_DIR/pipelines/DECam/QuickTemplate.yaml
+
+tasks:
+  calibrateImage:
+    class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
+    config:
+      # Same reference catalog choice as desgw_ap_pipe.yaml, so that the
+      # templates built here and the visit-level calibration used to build
+      # them are on a consistent astrometric/photometric system.
+      #
+      # the_monster_20250219 (DMTN-277) carries both: Gaia DR3 astrometry
+      # (coord_ra/dec, pm_ra/dec, parallax -- the same fields gaia_dr3 has)
+      # plus synthetic ugrizy fluxes per camera system in the same rows, so
+      # one dataset type serves both connections. For DECam, use the DES
+      # synthetic photometry (monster_DES_*), the closest filter match.
+      connections.astrometry_ref_cat: the_monster_20250219
+      connections.photometry_ref_cat: the_monster_20250219
+
+      # z-band here is sky-limited (post-ISR sky ~4100 ADU vs ~2950 in i), and
+      # PSF-star detection runs at 50 sigma (psf_detection.thresholdValue 10 x
+      # includeThresholdMultiplier 5). The adaptive-threshold layer only ever
+      # raises the threshold to control deblending in crowded fields, so it
+      # never compensates: z quanta detect ~160 peaks against ~815 in i and
+      # never iterate once. The result is 0 sources surviving the aperture-
+      # correction selector on ~30% of z detectors, which failed the whole
+      # detector and, through consolidateVisitSummary, its entire visit.
+      #
+      # Tolerate the Gaussian-flux aperture correction going missing rather
+      # than losing the detector. base_PsfFlux is deliberately NOT listed: a
+      # calexp with no PSF-flux aperture correction should still fail.
+      measure_aperture_correction.allowFailure: ["base_GaussianFlux"]
