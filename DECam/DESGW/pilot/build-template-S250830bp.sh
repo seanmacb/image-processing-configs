@@ -16,7 +16,7 @@ setup -j -r $OBSDECAM
 LOGFILE=$LOGDIR/buildTemplate-S250830bp.log
 
 date | tee $LOGFILE
-DATAQUERY="instrument='DECam' AND exposure.observation_type='science' AND exposure.day_obs<20250829 AND (tracking_ra>315 AND tracking_ra<335) AND (tracking_dec>-80 AND tracking_dec<-75) AND detector NOT IN (61,31) AND NOT (detector=2 AND exposure.day_obs<20161229)"
+DATAQUERY="instrument='DECam' AND exposure.observation_type='science' AND exposure.day_obs<20250829 AND (tracking_ra>315 AND tracking_ra<335) AND (tracking_dec>-80 AND tracking_dec<-75) AND detector NOT IN (61,31) AND NOT (detector=2 AND exposure.day_obs<20161229) AND NOT (detector=53 AND exposure=915609)"
 
 # --no-raise-on-partial-outputs: calibrateImage wraps AlgorithmError failures
 # (aperture correction, PSF shapelets) in AnnotatedPartialOutputsError. By
