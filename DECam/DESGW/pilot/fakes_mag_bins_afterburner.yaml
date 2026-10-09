@@ -1,0 +1,104 @@
+description: |
+  Afterburner: recovery-rate metrics for injected fakes in 1-magnitude steps
+  from 15 to 24, at both the visit and detector-visit level.
+
+  This does *not* rerun injectTemplate, differencing or association -- its
+  only input is `fakes_{coaddName}Diff_matchAssocDiaSrc` /
+  `fakes_{coaddName}Diff_matchAssocDiaSourceTable`, the per-injected-fake
+  table a completed `apDetectorVisitFakesCore.yaml` run already wrote (see
+  `lsst.analysis.tools.tasks.AssocDiaFakesDetectorVisitAnalysisConnections`
+  / `AssocDiaFakesVisitAnalysisConnections`). Point `-i` at that run's own
+  output collection and this reads straight from it:
+
+      pipetask run \
+          -b <REPO> \
+          -i <EXISTING_RUN_COLLECTION> \
+          -o <NEW_COLLECTION> \
+          -p pipelines/fakes_mag_bins_afterburner.yaml \
+          --register-dataset-types
+
+  `connections.outputName` on both tasks below is deliberately distinct from
+  the shipped pipeline's `assocDiaFakesDetectorVisitCore` /
+  `assocDiaFakesVisitCore` (which only carries two 2-mag-wide bins, 20-22 and
+  22-24), so the new `..._metrics` datasets land alongside the originals in
+  the same collection rather than colliding with them -- nothing from the
+  original run needs to be re-run or overwritten to get the finer binning.
+
+  The 9 one-magnitude bins (15-16 through 23-24) match the pattern
+  `numFoundFakesDiaMag{lo}t{hi}Metric` that
+  `examples/check_recovery_rate.ipynb`'s `parse_action_bin` already parses,
+  so that notebook picks these up with no changes once pointed at the new
+  dataset type names.
+
+parameters:
+  coaddName: goodSeeing
+
+tasks:
+  analyzeAssocDiaFakesDetectorVisitMagBins:
+    class: lsst.analysis.tools.tasks.AssocDiaFakesDetectorVisitAnalysisTask
+    config:
+      atools.numFoundFakesDiaMag15t16Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag15t16Metric.magMin: 15
+      atools.numFoundFakesDiaMag15t16Metric.magMax: 16
+      atools.numFoundFakesDiaMag16t17Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag16t17Metric.magMin: 16
+      atools.numFoundFakesDiaMag16t17Metric.magMax: 17
+      atools.numFoundFakesDiaMag17t18Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag17t18Metric.magMin: 17
+      atools.numFoundFakesDiaMag17t18Metric.magMax: 18
+      atools.numFoundFakesDiaMag18t19Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag18t19Metric.magMin: 18
+      atools.numFoundFakesDiaMag18t19Metric.magMax: 19
+      atools.numFoundFakesDiaMag19t20Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag19t20Metric.magMin: 19
+      atools.numFoundFakesDiaMag19t20Metric.magMax: 20
+      atools.numFoundFakesDiaMag20t21Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag20t21Metric.magMin: 20
+      atools.numFoundFakesDiaMag20t21Metric.magMax: 21
+      atools.numFoundFakesDiaMag21t22Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag21t22Metric.magMin: 21
+      atools.numFoundFakesDiaMag21t22Metric.magMax: 22
+      atools.numFoundFakesDiaMag22t23Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag22t23Metric.magMin: 22
+      atools.numFoundFakesDiaMag22t23Metric.magMax: 23
+      atools.numFoundFakesDiaMag23t24Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag23t24Metric.magMin: 23
+      atools.numFoundFakesDiaMag23t24Metric.magMax: 24
+      connections.data: "fakes_{coaddName}Diff_matchAssocDiaSrc"
+      connections.outputName: assocDiaFakesDetectorVisitMagBins
+      python: |
+        from lsst.analysis.tools.atools import FractionFoundFakesAssocDiaMagMetric
+  analyzeAssocDiaFakesVisitMagBins:
+    class: lsst.analysis.tools.tasks.AssocDiaFakesVisitAnalysisTask
+    config:
+      atools.numFoundFakesDiaMag15t16Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag15t16Metric.magMin: 15
+      atools.numFoundFakesDiaMag15t16Metric.magMax: 16
+      atools.numFoundFakesDiaMag16t17Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag16t17Metric.magMin: 16
+      atools.numFoundFakesDiaMag16t17Metric.magMax: 17
+      atools.numFoundFakesDiaMag17t18Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag17t18Metric.magMin: 17
+      atools.numFoundFakesDiaMag17t18Metric.magMax: 18
+      atools.numFoundFakesDiaMag18t19Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag18t19Metric.magMin: 18
+      atools.numFoundFakesDiaMag18t19Metric.magMax: 19
+      atools.numFoundFakesDiaMag19t20Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag19t20Metric.magMin: 19
+      atools.numFoundFakesDiaMag19t20Metric.magMax: 20
+      atools.numFoundFakesDiaMag20t21Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag20t21Metric.magMin: 20
+      atools.numFoundFakesDiaMag20t21Metric.magMax: 21
+      atools.numFoundFakesDiaMag21t22Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag21t22Metric.magMin: 21
+      atools.numFoundFakesDiaMag21t22Metric.magMax: 22
+      atools.numFoundFakesDiaMag22t23Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag22t23Metric.magMin: 22
+      atools.numFoundFakesDiaMag22t23Metric.magMax: 23
+      atools.numFoundFakesDiaMag23t24Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag23t24Metric.magMin: 23
+      atools.numFoundFakesDiaMag23t24Metric.magMax: 24
+      connections.data: "fakes_{coaddName}Diff_matchAssocDiaSourceTable"
+      connections.outputName: assocDiaFakesVisitMagBins
+      python: |
+        from lsst.analysis.tools.atools import FractionFoundFakesAssocDiaMagMetric
