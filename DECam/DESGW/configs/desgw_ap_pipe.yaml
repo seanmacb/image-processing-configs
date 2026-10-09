@@ -34,9 +34,13 @@ description: |
       prerequisite input, resolved at QuantumGraph build time, so this must be
       done before this pipeline is run at all -- well before injectedMatchDiaSrc.
   (4) Run this pipeline, setting the apdb_config parameter to point at the file
-      written in (2):
+      written in (2), and including the pretrained RBTransiNet model package
+      collection in -i (computeReliability/RBTransiNetTask runs with
+      modelPackageStorageMode: butler, so the model name is resolved from the
+      input collection rather than a config field):
         pipetask run -b $REPO -p desgw_ap_pipe.yaml#apPipe \
-          -i <inputs>,<injection catalog collection> -o <output collection> \
+          -i <inputs>,<injection catalog collection>,pretrained_models/tac_cnn_lsstcam_2026-02-26 \
+          -o <output collection> \
           -c 'parameters:apdb_config=/path/to/apdb_config.yaml'
 
 instrument: lsst.obs.decam.DarkEnergyCamera
@@ -53,7 +57,7 @@ imports:
 parameters:
   coaddName: goodSeeing
   # APDB config file must be user-specified; see note (4) above.
-  apdb_config: TBD
+  apdb_config: /shares/soares-santos.physik.uzh/ButlerProjects/desgw_apdb/apdb_config.yaml 
 
 tasks:
   isr:
@@ -86,6 +90,10 @@ tasks:
       # source catalog; max_trail_length defaults to ~0.4167 arcsec/s, i.e. the
       # DMTN-199 requirement of 10 deg/day.
       doTrailedSourceFilter: true
+      # Retain negative sources. The default (true) drops DIASources whose
+      # direct-image forced PSF flux SNR is below minAllowedDirectSnr (-2.0).
+      # The isNegative flag itself is not used for filtering anywhere.
+      doRemoveNegativeDirectImageSources: false
 
   associateApdb:
     class: lsst.ap.association.DiaPipelineTask
@@ -93,3 +101,112 @@ tasks:
       # No solar system association: we reject fast movers upstream in
       # filterDiaSource and do not attempt to characterize them here.
       doSolarSystemAssociation: false
+      # Unassociated diaSources with any of these flags set are routed to
+      # marginalDiaSources instead of seeding new diaObjects
+      # (filterUnAssociatedSources defaults to true). This is the stack default
+      # list plus pixelFlags_cr, pixelFlags_bad and psfFlux_flag_noGoodPixels;
+      # a list override replaces the default, so the defaults must be repeated
+      # here. isDipole is deliberately not listed (dipoles may seed objects).
+      newObjectBadFlags:
+        - centroid_flag
+        - pixelFlags_crCenter
+        - pixelFlags_nodataCenter
+        - pixelFlags_interpolatedCenter
+        - pixelFlags_saturatedCenter
+        - pixelFlags_suspectCenter
+        - pixelFlags_streakCenter
+        - glint_trail
+        - pixelFlags_cr
+        - pixelFlags_bad
+        - psfFlux_flag_noGoodPixels
+
+  computeReliability:
+    class: lsst.meas.transiNet.RBTransiNetTask
+    config:
+      # pretrainedModel (dataset type 'pretrainedModelPackage', dimensions=())
+      # is a butler-mode PrerequisiteInput: with modelPackageStorageMode
+      # 'butler', modelPackageName cannot be set here (RBTransiNetConfig.validate
+      # raises), so the model is whichever 'pretrainedModelPackage' dataset is
+      # visible in the -i collections at QuantumGraph build time. For this
+      # pipeline that's pretrained_models/tac_cnn_lsstcam_2026-02-26 (CNN
+      # real/bogus classifier trained on LSSTCam + injections) -- it must be
+      # included in -i; see note (4) above.
+      modelPackageStorageMode: butler
+
+  analyzeAssocDiaFakesDetectorVisitMagBins:
+    class: lsst.analysis.tools.tasks.AssocDiaFakesDetectorVisitAnalysisTask
+    config:
+      # Finer-grained recovery-rate metrics in 1-mag steps (15-24), alongside
+      # the shipped assocDiaFakesDetectorVisitCore task's 2-mag-wide 20-22 /
+      # 22-24 bins. connections.outputName is distinct from that task's so
+      # the two sets of metrics land side by side rather than colliding.
+      atools.numFoundFakesDiaMag15t16Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag15t16Metric.magMin: 15
+      atools.numFoundFakesDiaMag15t16Metric.magMax: 16
+      atools.numFoundFakesDiaMag16t17Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag16t17Metric.magMin: 16
+      atools.numFoundFakesDiaMag16t17Metric.magMax: 17
+      atools.numFoundFakesDiaMag17t18Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag17t18Metric.magMin: 17
+      atools.numFoundFakesDiaMag17t18Metric.magMax: 18
+      atools.numFoundFakesDiaMag18t19Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag18t19Metric.magMin: 18
+      atools.numFoundFakesDiaMag18t19Metric.magMax: 19
+      atools.numFoundFakesDiaMag19t20Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag19t20Metric.magMin: 19
+      atools.numFoundFakesDiaMag19t20Metric.magMax: 20
+      atools.numFoundFakesDiaMag20t21Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag20t21Metric.magMin: 20
+      atools.numFoundFakesDiaMag20t21Metric.magMax: 21
+      atools.numFoundFakesDiaMag21t22Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag21t22Metric.magMin: 21
+      atools.numFoundFakesDiaMag21t22Metric.magMax: 22
+      atools.numFoundFakesDiaMag22t23Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag22t23Metric.magMin: 22
+      atools.numFoundFakesDiaMag22t23Metric.magMax: 23
+      atools.numFoundFakesDiaMag23t24Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag23t24Metric.magMin: 23
+      atools.numFoundFakesDiaMag23t24Metric.magMax: 24
+      connections.data: "fakes_{coaddName}Diff_matchAssocDiaSrc"
+      connections.outputName: assocDiaFakesDetectorVisitMagBins
+      python: |
+        from lsst.analysis.tools.atools import FractionFoundFakesAssocDiaMagMetric
+
+  analyzeAssocDiaFakesVisitMagBins:
+    class: lsst.analysis.tools.tasks.AssocDiaFakesVisitAnalysisTask
+    config:
+      # Finer-grained recovery-rate metrics in 1-mag steps (15-24), alongside
+      # the shipped assocDiaFakesVisitCore task's 2-mag-wide 20-22 / 22-24
+      # bins. connections.outputName is distinct from that task's so the two
+      # sets of metrics land side by side rather than colliding.
+      atools.numFoundFakesDiaMag15t16Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag15t16Metric.magMin: 15
+      atools.numFoundFakesDiaMag15t16Metric.magMax: 16
+      atools.numFoundFakesDiaMag16t17Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag16t17Metric.magMin: 16
+      atools.numFoundFakesDiaMag16t17Metric.magMax: 17
+      atools.numFoundFakesDiaMag17t18Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag17t18Metric.magMin: 17
+      atools.numFoundFakesDiaMag17t18Metric.magMax: 18
+      atools.numFoundFakesDiaMag18t19Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag18t19Metric.magMin: 18
+      atools.numFoundFakesDiaMag18t19Metric.magMax: 19
+      atools.numFoundFakesDiaMag19t20Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag19t20Metric.magMin: 19
+      atools.numFoundFakesDiaMag19t20Metric.magMax: 20
+      atools.numFoundFakesDiaMag20t21Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag20t21Metric.magMin: 20
+      atools.numFoundFakesDiaMag20t21Metric.magMax: 21
+      atools.numFoundFakesDiaMag21t22Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag21t22Metric.magMin: 21
+      atools.numFoundFakesDiaMag21t22Metric.magMax: 22
+      atools.numFoundFakesDiaMag22t23Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag22t23Metric.magMin: 22
+      atools.numFoundFakesDiaMag22t23Metric.magMax: 23
+      atools.numFoundFakesDiaMag23t24Metric: FractionFoundFakesAssocDiaMagMetric
+      atools.numFoundFakesDiaMag23t24Metric.magMin: 23
+      atools.numFoundFakesDiaMag23t24Metric.magMax: 24
+      connections.data: "fakes_{coaddName}Diff_matchAssocDiaSourceTable"
+      connections.outputName: assocDiaFakesVisitMagBins
+      python: |
+        from lsst.analysis.tools.atools import FractionFoundFakesAssocDiaMagMetric
