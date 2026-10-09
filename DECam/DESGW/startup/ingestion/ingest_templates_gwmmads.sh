@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=30
 #SBATCH --mem=116GB
 #SBATCH --time=48:00:00
-#SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/ingest_template_desgw_%j.out
-#SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/ingest_template_desgw_%j.err
+#SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/ingest_template_gwmmads_%j.out
+#SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/ingest_template_gwmmads_%j.err
 
 source /shares/soares-santos.physik.uzh/repos/Butler-imports/s3it_setup/DESGW_CONFIGS
 module load miniforge3
@@ -13,8 +13,8 @@ source /shares/soares-santos.physik.uzh/envs/lsst_stack/loadLSST.sh
 setup lsst_distrib -c
 setup -j -r $OBSDECAM
 
-SCIFILES=/shares/soares-santos.physik.uzh/fitsFiles/desgw/templates_desgw/*
-LOGFILE=$LOGDIR/ingest-template-desgw.log
+SCIFILES=/shares/soares-santos.physik.uzh/fitsFiles/desgw/templates_gwmmads/*
+LOGFILE=$LOGDIR/ingest-template-gwmmads.log
 
 date | tee $LOGFILE
 butler ingest-raws $REPO $SCIFILES --transfer link \
