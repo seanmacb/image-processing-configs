@@ -1,0 +1,66 @@
+# Per-field configuration for the GW-Primo run scripts. Sourced by bash: it is
+# the only thing that changes from one sky region to the next. Create one with
+# `new_field.sh <FIELD>` and edit the values marked REQUIRED.
+#
+# Variables left unset take the defaults in common.sh (load_conf), which lists
+# all of them. Only the ones you are likely to change are described here.
+
+# --- Field --------------------------------------------------------------------
+
+# REQUIRED. Used in every collection and log name:
+# DECam/GW-Primo/$FIELD/drp, DECam/GW-Primo/$FIELD/overscanRaw, ...
+FIELD=
+
+# REQUIRED. Sky region, in the butler's ADQL-style syntax (degrees):
+#   CIRCLE(ra, dec, radius)
+#   BOX(ra_center, dec_center, ra_width, dec_height)    an RA/Dec rectangle
+#   POLYGON(ra1, dec1, ra2, dec2, ra3, dec3, ...)       great-circle edges
+# Steps 0-2 take every visit whose footprint touches it (whole visits, as
+# jointcal and skyCorr need); step 3 builds coadds for the patches that touch
+# it. A DECam pointing is ~1.1 deg in radius, so visits reach well outside.
+REGION=
+
+# --- Data selection -----------------------------------------------------------
+
+# Bands to process. Must be a subset of `bands` in configs/gwprimo_drp.yaml
+# (00_preflight.sh checks).
+# BANDS="g r i z N395 M411 M438 M464 M490 M517 N540"
+
+# Optional limits on the visits, all applied in every step:
+# DAY_OBS_MIN=20130101                 # YYYYMMDD
+# DAY_OBS_MAX=20261231
+# PROGRAMS="2026A-271131"              # only these science programs
+# EXCLUDE_PROGRAMS=""                  # never these
+# EXTRA_WHERE="visit.target_name != 'GWPRIMO_test'"   # any extra butler clause
+
+# --- Calibrations -------------------------------------------------------------
+
+# Calibration collections searched BEFORE DECam/defaults. The medium-band
+# flats are certified into DECam/calib/GW-Primo by ../calib/run_flats.sh.
+# Comma separated. 00_preflight.sh checks that every band finds a bias and a
+# flat.
+# CALIB_COLLECTIONS=DECam/calib/GW-Primo
+
+# Sky frames in skyCorr (step2): auto uses them once every physical filter and
+# night of the visits has a certified `sky` (../calib/run_calib.sh builds them);
+# on requires them; off never uses them. Decide before step2 first runs: a
+# later change needs a new OUTPUT_COLLECTION (step2 refuses to mix).
+# SKY_FRAMES=auto
+
+# --- Run settings -------------------------------------------------------------
+
+# NPROC=30                  # pipetask -j for steps 0-2 and the metrics
+# NPROC_STEP3=15            # pipetask -j for step 3 (deblending needs ~8 GB/worker)
+# SKYMAP=decam_rings_v1
+# OUTPUT_COLLECTION=DECam/GW-Primo/$FIELD/drp
+# OVERSCAN_COLLECTION=DECam/GW-Primo/$FIELD/overscanRaw
+# OVERSCAN_SKIP_EXISTING_IN=DECam/template/overscanRaw
+# METRICS_DIR=$LOGDIR/gwprimo/$FIELD
+# EXPORT_PLOTS=1            # copy each step's analysis_tools plots to METRICS_DIR
+
+# --- Check thresholds (fractions are 0-1, applied per band) -------------------
+
+# STEP0_MIN_FRAC=0.95       # raws with overscanRaw
+# STEP1_MIN_FRAC=0.8        # raws whose detector got a calexp
+# STEP2_MIN_FRAC=0.9        # step1 visits with a final visit summary and sourceTable_visit
+# STEP3_MIN_FRAC=0.5        # region patches with a deepCoadd (medium bands cover less sky)

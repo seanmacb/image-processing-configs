@@ -1,0 +1,492 @@
+description: |
+  GW-Primo DRP for DECam: single-frame processing, recalibration and
+  coaddition of broad-band (g r i z) and medium/narrow-band (N395, M411-M517,
+  N540) images of one sky region, with analysis_tools metrics after each step.
+  The object tables it ends with (GAaP, PSF, CModel, Kron and MultiProFit
+  fluxes in every band) are the input to the separate photo-z work.
+
+  Built on drp_pipe's DECam DRP ingredient (the same base as
+  $DRP_PIPE_DIR/pipelines/DECam/DRP-Merian.yaml): ISR with crosstalk from
+  overscanRaw, calibrateImage, jointcal for astrometry and photometry (no FGCM
+  or gbdes for DECam), sky correction, then warps, coadds and multiband
+  measurement.
+
+  Run it by subset, in order, with the scripts in ../run (see ../README.md).
+  The overscanRaw crosstalk sources isr needs come first, from cp_pipe's
+  RunIsrForCrosstalkSources.yaml (run/steps/step0.sh), as in DESGW/too_run:
+
+    step1          isr, calibrateImage, preSource tables     -> step1-metrics
+    step2a..step2e consolidation, sky correction, isolated stars, jointcal,
+                   final PSF / visit summaries, source tables -> step2-metrics
+    step3          warps, coadds, detection, deblending, measurement,
+                   forced photometry, object tables           -> step3-metrics
+
+  Prerequisites, all checked by ../run/00_preflight.sh: visits defined for the
+  raws, certified bias and flats for EVERY band (the medium-band flats are not
+  in DECam/calib yet), the_monster_20250219 in refcats/gen3, and the
+  decam_rings_v1 skymap.
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+parameters:
+  # Every band the run may contain. Band-dependent configs below (isolated
+  # star matching, merge priority, object table columns, extendedness,
+  # MultiProFit, and the `bands` list of every analysis task, which drops
+  # outputs for any band it does not list) are all built from this one list.
+  # BANDS in a field conf selects which data a run reads and must be a subset
+  # of this (00_preflight.sh checks). It cannot be overridden with
+  # `-c parameters:bands=...`: a command-line value arrives as a string.
+  # (The python: blocks below use plain loops, not comprehensions, because
+  # they are exec'd with separate locals that comprehensions cannot see.)
+  bands: ["g", "r", "i", "z", "N395", "M411", "M438", "M464", "M490", "M517", "N540"]
+  # Bands the tract-level object/refcat photometric comparison can use.
+  # analysis_tools maps a the_monster column back to a band by its last
+  # character (monster_DES_g -> "g", DM-46728), so a medium band (mapped to
+  # monster_DES_g by obs_decam's filterMap.py) would silently be compared as
+  # g. Medium bands are still compared per visit (step2-metrics), where the
+  # lookup is by physical filter.
+  refcat_bands: ["g", "r", "i", "z"]
+  # One all-sky reference catalog for astrometry and photometry, as in
+  # DESGW/configs/QuickTemplate.yaml. This repo has no gaia_dr3_20230707,
+  # ps1_pv3_3pi_20170110 or gaia_dr2_20200414 (the drp_pipe, jointcal and
+  # analysis_tools defaults), and PS1 does not reach Dec -77 anyway.
+  refcat: the_monster_20250219
+
+imports:
+  - location: $DRP_PIPE_DIR/pipelines/_ingredients/DECam/DRP.yaml
+    exclude:
+      # overscanRaw is a prerequisite of isr, so the producer cannot be in the
+      # same pipeline graph (DRP-Merian.yaml excludes it for the same reason).
+      - isrForCrosstalkSources
+      # Good-seeing templates and everything downstream of them (difference
+      # imaging, DIA association, forced photometry on visits): not needed for
+      # coadd photometry, and rbClassify would need a model package.
+      - selectGoodSeeingVisits
+      - templateGen
+      - reprocessVisitImage
+      - buildTemplate
+      - subtractImages
+      - detectAndMeasureDiaSources
+      - filterDiaSrcCat
+      - rbClassify
+      - filterDiaSourcePostReliability
+      - transformDiaSourceCat
+      - consolidateDiaSourceTable
+      - drpAssociation
+      - drpDiaCalculation
+      - consolidateAssocDiaSourceTable
+      - consolidateFullDiaObjectTable
+      - forcedPhotObjectDetector
+      - transformForcedSourceTable
+      - splitPrimaryObjectForcedSource
+      - consolidateForcedSourceTable
+      - forcedPhotDiaObjectDetector
+      - transformForcedSourceOnDiaObjectTable
+      - consolidateForcedSourceOnDiaObjectTable
+  # analysis_tools pipelines written for the v1 dataset names this DECam DRP
+  # produces (calexp, preSourceTable_visit, sourceTable_visit,
+  # objectTable_tract, deepCoadd*), the same set HSC's DRP imports. The v2
+  # ingredients in drp_pipe (analysis-visit-*.yaml, analysis-coadds.yaml) use
+  # names this pipeline never writes.
+  - location: $ANALYSIS_TOOLS_DIR/pipelines/exposureQualityCore.yaml
+    include:
+      - analyzeAmpOffsetMetadata
+  - location: $ANALYSIS_TOOLS_DIR/pipelines/visitQualityCore.yaml
+    include:
+      - analyzeCalibrateImageMetadata
+      - calexpSummary
+      - analyzePreSourceTableCore
+      - analyzeSourceTableCore
+      - catalogMatchVisit
+      - astrometricRefCatSourceVisit
+      - photometricMatchVisit
+      - photometricRefCatSourceVisit
+  - location: $ANALYSIS_TOOLS_DIR/pipelines/matchedVisitQualityCore.yaml
+    include:
+      - analyzeMatchedPreVisitCore
+      - analyzeMatchedVisitCore
+  - location: $ANALYSIS_TOOLS_DIR/pipelines/coaddQualityCore.yaml
+    include:
+      - analyzeObjectTableCore
+      - analyzeObjectParentTableCore
+      - catalogMatchTract
+      - refCatObjectTract
+      - photometricCatalogMatch
+      - photometricRefCatObjectTract
+      - plotPropertyMapTract
+      - makeBinnedDeepCoaddImage
+      - makeWholeTractDeepCoaddImage
+      - aggregateDeepCoaddMaskFractions
+      - makeBinnedDeepCoaddNImage
+      - makeWholeTractDeepCoaddNImage
+  - location: $ANALYSIS_TOOLS_DIR/pipelines/coaddColumnValidate.yaml
+
+tasks:
+  # --------------------------------------------------------------------------
+  # Processing
+  # --------------------------------------------------------------------------
+  calibrateImage:
+    class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
+    config:
+      connections.astrometry_ref_cat: parameters.refcat
+      connections.photometry_ref_cat: parameters.refcat
+      # The DECam ingredient selects PS1 stars on "i_flux"; the_monster has
+      # no bare <band>_flux columns (see obs_decam config/filterMap.py).
+      photometry.match.referenceSelection.magLimit.fluxField: monster_DES_i_flux
+      # Same tolerance as DESGW/configs/QuickTemplate.yaml: a detector whose
+      # Gaussian-flux aperture correction cannot be fit (too few stars, which
+      # the narrow bands make more likely) keeps its calexp instead of failing
+      # its whole visit. base_PsfFlux is deliberately not listed.
+      measure_aperture_correction.allowFailure: ["base_GaussianFlux"]
+
+  isolatedStarAssociation:
+    class: lsst.pipe.tasks.isolatedStarAssociation.IsolatedStarAssociationTask
+    config:
+      # "Any bands not listed will not be matched": a medium band missing here
+      # gets no isolated stars, so finalizeCharacterization has no PSF stars
+      # for its visits and the repeatability metrics skip it. Broad bands keep
+      # the DRP order (they set the primary band); medium bands follow.
+      python: |
+        order = []
+        for b in ["i", "z", "r", "g", "y", "u"]:
+            if b in parameters.bands:
+                order.append(b)
+        for b in parameters.bands:
+            if b not in order:
+                order.append(b)
+        config.band_order = order
+
+  skyCorr:
+    class: lsst.pipe.tasks.skyCorrection.SkyCorrectionTask
+    config:
+      # There are no `sky` frames in DECam/calib for any filter, and skyCorr
+      # requires them as a prerequisite when doSky is on. Without them it
+      # still fits the full-focal-plane background (bgModel1 and bgModel2 on
+      # the DECam scales set by the ingredient). ../calib/run_calib.sh builds
+      # and certifies sky frames; run/steps/step2.sh then passes
+      # `-c skyCorr:doSky=True` once every filter and night of the field has
+      # one (SKY_FRAMES in the field conf). Keep this default false: one
+      # config covers all bands, and the archival broad bands have none yet.
+      doSky: false
+
+  jointcal:
+    class: lsst.jointcal.JointcalTask
+    config:
+      connections.astrometryRefCat: parameters.refcat
+      connections.photometryRefCat: parameters.refcat
+      # obs_decam's config/jointcal.py turns colour terms on, but its
+      # colorterms.py only has decam/sdss/hsc/ps1 entries, so with the_monster
+      # the colour-term lookup raises. Without colour terms each medium band is
+      # tied to the broad-band the_monster flux filterMap.py maps it to (M411..
+      # M517 and N540 -> DES g, N395 -> SDSS u): the zero points carry a
+      # colour-dependent offset that the photo-z calibration has to absorb.
+      applyColorTerms: false
+
+  mergeDetections:
+    class: lsst.pipe.tasks.mergeDetections.MergeDetectionsTask
+    config:
+      # obs_decam's priority list stops at the Merian bands (N708, N540, N964,
+      # N419), so medium-band footprints would not be merged.
+      python: |
+        order = ["r", "i", "z", "g", "y", "u"]
+        for b in parameters.bands:
+            if b not in order:
+                order.append(b)
+        config.priorityList = order
+  mergeMeasurements:
+    class: lsst.pipe.tasks.mergeMeasurements.MergeMeasurementsTask
+    config:
+      python: |
+        order = ["r", "i", "z", "g", "y", "u"]
+        for b in parameters.bands:
+            if b not in order:
+                order.append(b)
+        config.priorityList = order
+
+  fitDeblendedObjectsExp:
+    class: lsst.meas.extensions.multiprofit.pipetasks_fit.MultiProFitCoaddExpFitTask
+    config:
+      # Fit every band so the model colours are consistent. Medium bands cover
+      # less sky than the broad bands, and without allow_missing_bands a patch
+      # missing any one band is skipped entirely (NoWorkFound).
+      allow_missing_bands: true
+      python: |
+        config.fit_coadd_multiband.bands_fit = list(parameters.bands)
+  fitDeblendedObjectsSersic:
+    class: lsst.meas.extensions.multiprofit.pipetasks_fit.MultiProFitCoaddSersicFitTask
+    config:
+      allow_missing_bands: true
+      python: |
+        config.fit_coadd_multiband.bands_fit = list(parameters.bands)
+
+  transformObjectTable:
+    class: lsst.pipe.tasks.postprocess.TransformObjectCatalogTask
+    config:
+      # Same columns in every patch (NaN where a band has no data), so the
+      # per-tract consolidation and the photo-z inputs have one schema.
+      outputBands: parameters.bands
+  computeObjectEpochs:
+    class: lsst.drp.tasks.compute_object_epochs.ComputeObjectEpochsTask
+    config:
+      bands: parameters.bands
+  consolidateObjectTable:
+    class: lsst.pipe.tasks.postprocess.ConsolidateObjectTableTask
+    config:
+      # griz_model_extendedness is what the coadd analysis selects stars and
+      # galaxies with; keep it whenever g, r, i and z are all in the run.
+      python: |
+        config.actions.extendedness.bands = list(parameters.bands)
+        config.actions.extendedness.bands_combined.clear()
+        has_griz = True
+        for b in ["g", "r", "i", "z"]:
+            if b not in parameters.bands:
+                has_griz = False
+        if has_griz:
+            config.actions.extendedness.bands_combined["griz"] = "g,r,i,z"
+
+  # --------------------------------------------------------------------------
+  # Metrics (analysis_tools). Every analysis task loops over, and keeps
+  # outputs for, only the bands in its `bands` config (default ugrizy).
+  # --------------------------------------------------------------------------
+  analyzeCalibrateImageMetadata:
+    class: lsst.analysis.tools.tasks.TaskMetadataAnalysisTask
+    config:
+      bands: parameters.bands
+  calexpSummary:
+    class: lsst.analysis.tools.tasks.CalexpSummaryAnalysisTask
+    config:
+      bands: parameters.bands
+
+  analyzePreSourceTableCore:
+    class: lsst.analysis.tools.tasks.SourceTableVisitAnalysisTask
+    config:
+      bands: parameters.bands
+  analyzeSourceTableCore:
+    class: lsst.analysis.tools.tasks.SourceTableVisitAnalysisTask
+    config:
+      bands: parameters.bands
+  catalogMatchVisit:
+    class: lsst.analysis.tools.tasks.astrometricCatalogMatch.AstrometricCatalogMatchVisitTask
+    config:
+      connections.refCatalog: parameters.refcat
+  # The refcat-residual tasks name their outputs with a literal default
+  # refcat (gaia_dr3_20230707 / ps1_pv3_3pi_20170110), so name them after the
+  # catalog actually used.
+  astrometricRefCatSourceVisit:
+    class: lsst.analysis.tools.tasks.refCatSourceAnalysis.RefCatSourceAnalysisTask
+    config:
+      connections.refCatalog: parameters.refcat
+      connections.outputName: sourceTable_visit_the_monster_20250219_match_astrom
+      bands: parameters.bands
+  photometricMatchVisit:
+    class: lsst.analysis.tools.tasks.photometricCatalogMatch.PhotometricCatalogMatchVisitTask
+    config:
+      connections.refCatalog: parameters.refcat
+      # No the_monster colour terms (see jointcal above).
+      referenceCatalogLoader.doApplyColorTerms: false
+      # The visit task looks the filter map up by PHYSICAL filter name, while
+      # obs_decam's filterMap.py is keyed by band: add a physical-filter key
+      # for every DECam filter (both N540 physical filters included).
+      python: |
+        import os
+        from lsst.obs.decam.decamFilters import DECAM_FILTER_DEFINITIONS
+        from lsst.utils import getPackageDir
+        loader = config.referenceCatalogLoader.refObjLoader
+        loader.filterMap = {}
+        loader.load(os.path.join(getPackageDir("obs_decam"), "config", "filterMap.py"))
+        by_band = dict(loader.filterMap)
+        for f in DECAM_FILTER_DEFINITIONS:
+            if f.band in by_band:
+                loader.filterMap[f.physical_filter] = by_band[f.band]
+  photometricRefCatSourceVisit:
+    class: lsst.analysis.tools.tasks.refCatSourcePhotometricAnalysis.RefCatSourcePhotometricAnalysisTask
+    config:
+      connections.refCatalog: parameters.refcat
+      connections.outputName: sourceTable_visit_the_monster_20250219_match_photom
+      bands: parameters.bands
+  analyzeMatchedPreVisitCore:
+    class: lsst.analysis.tools.tasks.AssociatedSourcesTractAnalysisTask
+    config:
+      bands: parameters.bands
+  analyzeMatchedVisitCore:
+    class: lsst.analysis.tools.tasks.AssociatedSourcesTractAnalysisTask
+    config:
+      bands: parameters.bands
+      # No isolated_star_stellar_motions in this pipeline (as in HSC's DRP).
+      applyAstrometricCorrections: false
+
+  analyzeObjectTableCore:
+    class: lsst.analysis.tools.tasks.ObjectTableTractAnalysisTask
+    config:
+      bands: parameters.bands
+  analyzeObjectParentTableCore:
+    class: lsst.analysis.tools.tasks.ObjectTableTractAnalysisTask
+    config:
+      bands: parameters.bands
+  validateObjectTableCore:
+    class: lsst.analysis.tools.tasks.ObjectTableTractAnalysisTask
+    config:
+      bands: parameters.bands
+  catalogMatchTract:
+    class: lsst.analysis.tools.tasks.astrometricCatalogMatch.AstrometricCatalogMatchTask
+    config:
+      connections.refCatalog: parameters.refcat
+      bands: parameters.bands
+  refCatObjectTract:
+    class: lsst.analysis.tools.tasks.refCatObjectAnalysis.RefCatObjectAnalysisTask
+    config:
+      connections.refCatalog: parameters.refcat
+      connections.outputName: objectTable_tract_the_monster_20250219_match_astrom
+      bands: parameters.bands
+  photometricCatalogMatch:
+    class: lsst.analysis.tools.tasks.photometricCatalogMatch.PhotometricCatalogMatchTask
+    config:
+      connections.refCatalog: parameters.refcat
+      filterNames: parameters.refcat_bands
+      referenceCatalogLoader.doApplyColorTerms: false
+      python: |
+        import os
+        from lsst.utils import getPackageDir
+        loader = config.referenceCatalogLoader.refObjLoader
+        loader.filterMap = {}
+        loader.load(os.path.join(getPackageDir("obs_decam"), "config", "filterMap.py"))
+  photometricRefCatObjectTract:
+    class: lsst.analysis.tools.tasks.refCatObjectPhotometricAnalysis.RefCatObjectPhotometricAnalysisTask
+    config:
+      connections.refCatalog: parameters.refcat
+      connections.outputName: objectTable_tract_the_monster_20250219_match_photom
+      bands: parameters.refcat_bands
+  plotPropertyMapTract:
+    class: lsst.analysis.tools.tasks.PerTractPropertyMapAnalysisTask
+    config:
+      bands: parameters.bands
+  makeWholeTractDeepCoaddImage:
+    class: lsst.analysis.tools.tasks.WholeTractImageAnalysisTask
+    config:
+      bands: parameters.bands
+  aggregateDeepCoaddMaskFractions:
+    class: lsst.analysis.tools.tasks.WholeTractMaskFractionAnalysisTask
+    config:
+      bands: parameters.bands
+  makeWholeTractDeepCoaddNImage:
+    class: lsst.analysis.tools.tasks.WholeTractImageAnalysisTask
+    config:
+      bands: parameters.bands
+
+subsets:
+  step1:
+    subset:
+      - isr
+      - calibrateImage
+      - transformPreSourceTable
+    description: |
+      Single-frame processing, per detector. Select FULL visits (the scripts
+      use `visit.region OVERLAPS <region>`), never tract or patch: step2
+      needs whole visits.
+  step1-metrics:
+    subset:
+      - analyzeAmpOffsetMetadata
+      - analyzeCalibrateImageMetadata
+      - calexpSummary
+    description: |
+      Per-detector metrics after step1: amp offsets, calibrateImage metadata
+      (PSF star counts, astrometry/photometry match counts and offsets, mask
+      fractions, sky levels) and calexp summary statistics (PSF size, zero
+      point, depth, sky).
+  step2a:
+    subset:
+      - consolidatePreSourceTable
+      - consolidateVisitSummary
+      - skyCorr
+      - isolatedStarAssociation
+    description: |
+      Visit-level consolidation and sky correction, and tract-level isolated
+      star association. Constrain by skymap and the visit selection only.
+  step2b:
+    subset:
+      - jointcal
+    description: |
+      Per-tract, per-filter astrometric and photometric fit against
+      the_monster.
+  step2d:
+    subset:
+      - finalizeCharacterizationDetector
+      - consolidateFinalizeCharacterization
+      - writeRecalibratedSourceTable
+      - transformSourceTable
+      - consolidateSourceTable
+      - updateVisitSummary
+    description: |
+      Final PSF and aperture corrections, recalibrated source tables and the
+      final visit summaries.
+  step2e:
+    subset:
+      - makeCcdVisitTable
+      - makeVisitTable
+    description: |
+      Per-collection visit and detector-visit tables.
+  step2-metrics:
+    subset:
+      - analyzePreSourceTableCore
+      - analyzeSourceTableCore
+      - catalogMatchVisit
+      - astrometricRefCatSourceVisit
+      - photometricMatchVisit
+      - photometricRefCatSourceVisit
+      - analyzeMatchedPreVisitCore
+      - analyzeMatchedVisitCore
+    description: |
+      Metrics after step2: per-visit source-table quality before and after
+      recalibration, per-visit astrometric and photometric residuals against
+      the_monster (all bands; the medium bands against their broad-band
+      proxy), and per-tract repeatability of isolated stars before
+      (preSource) and after (source) jointcal.
+  step3:
+    subset:
+      - selectDeepCoaddVisits
+      - makeDirectWarp
+      - makePsfMatchedWarp
+      - assembleCoadd
+      - assembleCellCoadd
+      - healSparsePropertyMaps
+      - detection
+      - mergeDetections
+      - deconvolve
+      - deblend
+      - measure
+      - mergeMeasurements
+      - forcedPhotCoadd
+      - fitDeepCoaddPsfGaussians
+      - fitDeblendedObjectsExp
+      - fitDeblendedObjectsSersic
+      - writeObjectTable
+      - transformObjectTable
+      - computeObjectEpochs
+      - consolidateObjectTable
+      - consolidateParentTable
+      - splitPrimaryObject
+    description: |
+      Coaddition and multiband measurement, per patch, then per-tract object
+      tables. The DECam step3 without the good-seeing templates, plus
+      consolidateParentTable (needed by the deblender metrics).
+  step3-metrics:
+    subset:
+      - analyzeObjectTableCore
+      - analyzeObjectParentTableCore
+      - validateObjectTableCore
+      - catalogMatchTract
+      - refCatObjectTract
+      - photometricCatalogMatch
+      - photometricRefCatObjectTract
+      - plotPropertyMapTract
+      - makeBinnedDeepCoaddImage
+      - makeWholeTractDeepCoaddImage
+      - aggregateDeepCoaddMaskFractions
+      - makeBinnedDeepCoaddNImage
+      - makeWholeTractDeepCoaddNImage
+    description: |
+      Metrics after step3, per tract: object-table quality (PSF-CModel,
+      stellar locus widths, sizes and shapes, sky objects, input counts),
+      deblender metrics, valid-flux fractions, astrometric and (broad-band)
+      photometric residuals against the_monster, depth / PSF / exposure-time
+      property maps, and binned whole-tract coadd and N-image mosaics.

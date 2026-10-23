@@ -1,0 +1,29 @@
+description: |
+  Sky frames for DECam, from science exposures: cp_pipe's DECam cpSky.yaml
+  with its ISR set up like the GW-Primo science ISR (step1 of
+  ../../configs/gwprimo_drp.yaml), so the sky pattern is measured on images
+  processed the same way it is later subtracted from.
+
+  cpSkyIsr -> cpSkyImage (mask sources, fit the large-scale background per
+  detector) -> cpSkyScaleMeasure (per exposure) -> cpSkySubtractBackground ->
+  cpSkyCombine: one `sky` per (physical filter, detector).
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $CP_PIPE_DIR/pipelines/DECam/cpSky.yaml
+
+tasks:
+  cpSkyIsr:
+    # Exactly the ingredient's class string: a different spelling of the same
+    # class replaces the imported config instead of extending it.
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      # obs_decam's isr.py turns crosstalk on, but cpSkyIsr keeps IsrTask's
+      # default source name (isrOverscanCorrected), which nothing in this repo
+      # produces: point it at overscanRaw, as the DECam DRP isr and cpFlat do.
+      connections.crosstalkSources: overscanRaw
+      # The DECam cpSky.yaml means to set these, but its cpSkyIsr block is
+      # indented under cpSkyImage and never applied. Same as the DRP isr.
+      doAmpOffset: true
+      ampOffset.doApplyAmpOffset: true

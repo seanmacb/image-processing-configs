@@ -10,7 +10,7 @@ repositories (PostgreSQL-backed) under `/shares/soares-santos.physik.uzh/`.
 | Path | Contents |
 |---|---|
 | [`DECam/DESGW/`](DECam/DESGW/README.md) | DECam / DESGW gravitational-wave follow-up processing: calibrations, template building, the AP (difference-imaging) pipeline with fake injection, and verification. **The active part of this repo.** |
-| `DECam/GW-Primo/` | Placeholder (empty README). |
+| [`DECam/GW-Primo/`](DECam/GW-Primo/README.md) | DECam broad- plus medium-band DRP for one sky region (single-frame, jointcal recalibration, coaddition and multiband measurement), with `analysis_tools` metrics after each step. Produces the object tables for photo-z. |
 | `DECam/README.md` | Placeholder (empty README). |
 | [`utilities/postgres-setup/`](utilities/postgres-setup/README.md) | Scripts to deploy and back up the PostgreSQL server that hosts the Butler registries (UZH Science Cloud, Debian 13). |
 | [`utilities/containers/postgres_backup_test/`](utilities/containers/postgres_backup_test/README.md) | Apptainer container that restores a Postgres backup into a throwaway instance to prove it is restorable. |
