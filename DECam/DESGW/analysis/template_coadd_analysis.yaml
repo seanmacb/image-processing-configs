@@ -1,0 +1,114 @@
+description: |
+  Additive QA for DESGW difference-imaging templates (template_coadd).
+
+  The template-building pipeline (QuickTemplateBestSeeing.yaml -> ap_pipe
+  QuickTemplate.yaml, subset makeMetrics) already writes, per tract:
+  template_coadd_bin, template_coadd_n_image_bin, the whole-tract image/n_image
+  plots, template_coadd_tract_mask_fraction_metrics, template_coadd_depth_table
+  and template_coadd_depth_summary_metrics. This pipeline does NOT redo those; it
+  adds the products makeMetrics never makes:
+    - per-tract n_image depth plot (reads template_coadd_n_image directly),
+    - survey-level metric tables of the existing depth and mask-fraction bundles,
+    - whole-sky plots of those tables,
+    - per-patch interpolated-pixel-count metric from assembleTemplateCoadd
+      metadata, plus a survey-level table of it.
+  All new outputs end in "_template" (or contain "_template_") so they cannot
+  collide with deep_coadd QA or with the upstream template_* QA products.
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+tasks:
+  # --- n_image depth --------------------------------------------------------
+  coaddDepthPlotTemplate:
+    class: lsst.analysis.tools.tasks.CoaddDepthSummaryPlotTask
+    config:
+      # Input: {coaddName}_coadd_n_image -> template_coadd_n_image
+      connections.coaddName: template
+      connections.outputName: coadd_depth_template
+      atools.n_image: CoaddQualityPlot
+      python: |
+        from lsst.analysis.tools.atools import CoaddQualityPlot
+
+  makeCoaddDepthMetricTableTemplate:
+    class: lsst.analysis.tools.tasks.MakeMetricTableTask
+    config:
+      # Written upstream by coaddDepthMetricTract (CoaddDepthTableTractAnalysisTask).
+      connections.metricBundleName: template_coadd_depth_summary_metrics
+      connections.outputTableName: coadd_depth_summary_metrics_table_template
+      inputDataDimensions: [skymap, tract]
+      outputTableDimensions: [skymap]
+
+  coaddDepthWholeSkyPlotTemplate:
+    class: lsst.analysis.tools.tasks.WholeSkyAnalysisTask
+    config:
+      connections.inputName: coadd_depth_summary_metrics_table_template
+      connections.outputName: coadd_depth_template
+      # Band-parameterized plots; `bands` defaults to ugrizy. The run script
+      # narrows it to BAND when one is given.
+      file: $ANALYSIS_TOOLS_DIR/config/coaddDepthMetricsWholeSkyPlot.py
+
+  # --- mask fractions -------------------------------------------------------
+  makeMaskFractionMetricTableTemplate:
+    class: lsst.analysis.tools.tasks.MakeMetricTableTask
+    config:
+      # Written upstream by aggregateTemplateCoaddMaskFractions
+      # (WholeTractMaskFractionAnalysisTask on template_coadd_bin).
+      connections.metricBundleName: template_coadd_tract_mask_fraction_metrics
+      connections.outputTableName: coadd_tract_mask_fraction_metrics_table_template
+      inputDataDimensions: [skymap, tract, band]
+      outputTableDimensions: [skymap, band]
+
+  maskFractionWholeSkyPlotTemplate:
+    class: lsst.analysis.tools.tasks.WholeSkyAnalysisTask
+    config:
+      connections.inputName: coadd_tract_mask_fraction_metrics_table_template
+      connections.outputName: coadd_mask_fraction_template
+      inputDimensions: [skymap, band]
+      outputDimensions: [skymap, band]
+      file: $ANALYSIS_TOOLS_DIR/config/aggregatedMaskFractionsWholeSkyPlot.py
+
+  # --- assembleTemplateCoadd metadata ---------------------------------------
+  analyzeAssembleTemplateCoaddMetadataTemplate:
+    class: lsst.analysis.tools.tasks.TaskMetadataAnalysisTask
+    config:
+      connections.inputName: assembleTemplateCoadd_metadata
+      connections.storageClass: TaskMetadata
+      connections.outputName: assembleTemplateCoadd_metadata_template  # + "_metrics"
+      inputDimensions: [skymap, tract, patch, band]
+      # Quanta that wrote metadata but no coadd lack the interpImage entry.
+      raiseNoWorkFoundOnIncompleteMetadata: true
+      atools.assembleTemplateCoaddMetadata: TaskMetadataMetricTool
+      atools.assembleTemplateCoaddMetadata.taskName: assembleTemplateCoadd
+      # Read from "assembleTemplateCoadd:interpImage" (the final coadd's
+      # interpolation, not assembleStaticSkyModel:interpImage).
+      atools.assembleTemplateCoaddMetadata.subTaskNames:
+        interpolated_pixel_count: interpImage
+      atools.assembleTemplateCoaddMetadata.metrics:
+        interpolated_pixel_count: ct
+      python: |
+        from lsst.analysis.tools.atools import TaskMetadataMetricTool
+
+  makeAssembleMetadataMetricTableTemplate:
+    class: lsst.analysis.tools.tasks.MakeMetricTableTask
+    config:
+      connections.metricBundleName: assembleTemplateCoadd_metadata_template_metrics
+      connections.outputTableName: assembleTemplateCoadd_metadata_metrics_table_template
+      inputDataDimensions: [skymap, tract, patch, band]
+      outputTableDimensions: [skymap, band]
+      dataIdFieldsToIncludeAsColumns: [tract, patch]
+
+subsets:
+  template_coadd_qa:
+    subset:
+      - coaddDepthPlotTemplate
+      - makeCoaddDepthMetricTableTemplate
+      - coaddDepthWholeSkyPlotTemplate
+      - makeMaskFractionMetricTableTemplate
+      - maskFractionWholeSkyPlotTemplate
+      - analyzeAssembleTemplateCoaddMetadataTemplate
+      - makeAssembleMetadataMetricTableTemplate
+    description: >
+      All template_coadd QA tasks: n_image depth plot, survey-level depth and
+      mask-fraction metric tables with whole-sky plots, and assembleTemplateCoadd
+      interpolated-pixel metrics. Requires the upstream makeMetrics outputs in
+      the input collection.
