@@ -1,0 +1,32 @@
+description: DESGW backlog template building pipeline for DECam, best-seeing visit selection
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+# QuickTemplate.yaml in this directory cannot be imported: $IMAGE_PROC_CONFIG_DIR
+# resolves to an eups:// URI and there is no such eups package. So this repeats
+# its calibrateImage overrides on top of the same upstream pipeline. Keep the two
+# files in sync.
+imports:
+  - location: $AP_PIPE_DIR/pipelines/DECam/QuickTemplate.yaml
+
+tasks:
+  calibrateImage:
+    class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
+    config:
+      connections.astrometry_ref_cat: the_monster_20250219
+      connections.photometry_ref_cat: the_monster_20250219
+      measure_aperture_correction.allowFailure: ["base_GaussianFlux"]
+
+  # Replace the upstream quantile selection (maxPsfFwhm 1.8, nVisitsMin 8,
+  # qMax 0.5) with a plain best-seeing selection: at most 5 visits per patch,
+  # none with a visit-mean PSF FWHM above 1.5 arcsec. Fewer than 5 visits are
+  # used where fewer pass the cut.
+  selectTemplateCoaddVisits:
+    class: lsst.pipe.tasks.selectImages.BestSeeingSelectVisitsTask
+    config:
+      # Redeclaring the task drops its upstream config, including these two
+      # connections (drp_pipe base-v2 and ap_pipe QuickTemplate respectively).
+      connections.visitSummaries: preliminary_visit_summary
+      connections.goodVisits: template_coadd_visit_selection
+      nVisitsMax: 5
+      maxPsfFwhm: 1.5

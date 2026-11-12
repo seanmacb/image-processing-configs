@@ -1,0 +1,50 @@
+description: |
+  $CP_VERIFY_DIR/pipelines/DECam/verifyBias.yaml with a workaround for a
+  DECam/ip_isr header-keyword mismatch that otherwise fails every single
+  verifyBiasDet quantum.
+
+  lsst.ip.isr.isrStatistics.IsrStatisticsTask.run() unconditionally reads
+  inputExp.getMetadata().get("MJD", None) (isrStatistics.py:337) with no config
+  override for the keyword name. DECam raw headers carry the date as MJD-OBS,
+  never as a literal "MJD" key, so this is always None for DECam. cp_verify's
+  CpVerifyStatsTask.repackStats() (verifyStats.py) puts that None straight into
+  the per-amplifier "mjd" column of verifyBiasDetResults. A column of all-None
+  values gets an object dtype that astropy can build but pyarrow's Parquet
+  writer cannot: every verifyBiasDet quantum crashes at butlerQC.put() with
+  "pyarrow.lib.ArrowNotImplementedError: Unsupported numpy type 17 / Could not
+  serialize column mjd (type object) to Parquet." (confirmed against
+  DECam/calib/verify/bias/14: verifyBiasIsrExp=3596, verifyBiasDetStats=1912,
+  verifyBiasDetResults=0 -- the SLURM job itself completes since pipetask
+  doesn't fail-fast, but the run merge tasks (verifyBiasExp/verifyBias) never
+  get their inputs and the run can never produce a usable result no matter how
+  much walltime it's given).
+
+  The fix retargets IsrTask's `isrStats` subtask to
+  DesgwIsrStatisticsTask (configs/desgw_isr_statistics.py), a real subclass
+  that backfills MJD from MJD-OBS. This is NOT done via a pipeline `python:`
+  block that monkeypatches IsrStatisticsTask.run() in place -- that was tried
+  first and silently doesn't work: pipetask multiprocessing always uses the
+  `spawn` start method (fork is no longer supported), so a monkeypatch
+  applied while building the quantum graph never reaches the fresh, spawned
+  worker processes that actually execute each quantum; they reconstruct
+  their Config from pickled field *values* only, never replaying the
+  arbitrary code that produced them (confirmed against a real cluster run:
+  every verifyBiasDet quantum still failed with the exact same Parquet
+  error). A retargeted subtask class defined in a real module survives
+  spawning like any other class -- but only if that module's directory is on
+  PYTHONPATH for the worker too, which the verify-bias-*.sh scripts export
+  explicitly before calling pipetask.
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $CP_VERIFY_DIR/pipelines/DECam/verifyBias.yaml
+
+tasks:
+  verifyBiasIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      python: |
+        from desgw_isr_statistics import DesgwIsrStatisticsTask
+
+        config.isrStats.retarget(DesgwIsrStatisticsTask)

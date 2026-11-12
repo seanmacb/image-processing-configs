@@ -1,0 +1,25 @@
+description: |
+  $CP_VERIFY_DIR/pipelines/DECam/verifyFlat.yaml with the same MJD-backfill
+  workaround as configs/desgw_verify_bias.yaml -- see that file for the full
+  explanation, including why this has to be a retargeted subtask class in a
+  real module (configs/desgw_isr_statistics.py) rather than a pipeline
+  `python:` block that monkeypatches IsrStatisticsTask in place (that
+  approach silently doesn't survive pipetask's spawn-based multiprocessing).
+  verifyFlatDet fails the same way verifyBiasDet does: every verifyFlatDet
+  quantum raises "Could not serialize column mjd (type object) to Parquet"
+  from an all-None mjd column, so verifyFlatExp/verifyFlat never get their
+  inputs.
+
+instrument: lsst.obs.decam.DarkEnergyCamera
+
+imports:
+  - location: $CP_VERIFY_DIR/pipelines/DECam/verifyFlat.yaml
+
+tasks:
+  verifyFlatIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      python: |
+        from desgw_isr_statistics import DesgwIsrStatisticsTask
+
+        config.isrStats.retarget(DesgwIsrStatisticsTask)

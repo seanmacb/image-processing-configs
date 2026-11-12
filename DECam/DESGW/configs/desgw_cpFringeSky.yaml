@@ -1,0 +1,45 @@
+description: |
+  DESGW z-band FRINGE construction from on-sky science exposures.
+
+  Wraps the stock cp_pipe DECam cpFringe pipeline, which is tuned for dome
+  flats, and retunes it for night-sky frames. Dome flats carry no fringe signal
+  worth speaking of (the fringing comes from the OH/O2 sky emission lines, not
+  from the continuum lamp), so the fringe frame has to be built from science
+  exposures, where every star and galaxy must be masked before the combine.
+
+  Changes from $CP_PIPE_DIR/pipelines/DECam/cpFringe.yaml:
+
+    cpFringeIsr      doDefect on. Science raws see the full defect map; masking
+                     the bad columns keeps them out of the background estimate
+                     and (via INTRP) out of the combine.
+    cpFringeMeasure  Source mask is deeper and wider. 3-sigma detection rather
+                     than 5, footprints grown to 4 PSF sigma rather than 2.4, so
+                     faint galaxies and the wings of bright stars do not leak into
+                     the stack. Background mesh widened to 256 px so the
+                     subtracted background does not absorb fringe structure.
+    cpFringeCombine  Unchanged apart from also rejecting BAD/NO_DATA/SUSPECT
+                     pixels; the per-exposure DETECTED mask does the real work.
+
+  Exposure selection (on-sky, z, per-epoch, dithered) is done in the data
+  query of the calling script, not here. The combine is only clean when the
+  inputs are dithered, so a pixel is covered by sky in most of them: a stack of
+  repeated pointings leaves BAD holes wherever a star sits in every frame.
+instrument: lsst.obs.decam.DarkEnergyCamera
+imports:
+  - location: $CP_PIPE_DIR/pipelines/DECam/cpFringe.yaml
+tasks:
+  cpFringeIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doDefect: true
+      doFringe: false
+  cpFringeMeasure:
+    class: lsst.cp.pipe.CpFringeTask
+    config:
+      detection.thresholdValue: 3.0
+      detection.nSigmaToGrow: 4.0
+      subtractBackground.binSize: 256
+  cpFringeCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+      mask: ["SAT", "DETECTED", "INTRP", "BAD", "NO_DATA", "SUSPECT"]
