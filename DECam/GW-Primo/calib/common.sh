@@ -44,10 +44,10 @@ load_set() {
     # Drop every conf variable (and everything derived from them) left by an
     # earlier load_set or load_conf in this shell, so a set (or a conf that
     # omits a required value) cannot inherit another one's values.
-    unset SET SKY_ONLY BANDS DAY_OBS_MIN DAY_OBS_MAX CERT_BEGIN CERT_END EXTRA_WHERE SKY_EXTRA_WHERE NPROC \
+    unset SET SKY_ONLY SKY_GWPRIMO_FLATS SKY_SUPERSEDED_BY BANDS DAY_OBS_MIN DAY_OBS_MAX CERT_BEGIN CERT_END EXTRA_WHERE SKY_EXTRA_WHERE NPROC \
         CALIB_COLLECTION OVERSCAN_COLLECTION FLAT_COLLECTION VERIFY_COLLECTION SKY_COLLECTION \
-        SKY_PIPELINE FLAT_QUERY SKY_QUERY SKY_BASE_QUERY FLAT_MIN_EXPOSURES SKY_MIN_EXPOSURES \
-        SKY_MIN_EXPTIME SKY_MAX_EXPOSURES SKY_EXPOSURE_LIST
+        SKY_PIPELINE FLAT_QUERY SKY_QUERY SKY_BASE_QUERY FLAT_MIN_EXPOSURES SKY_MIN_EXPOSURES OVERSCAN_MAX_MISSING_FRAC \
+        SKY_MIN_EXPTIME SKY_MAX_EXPOSURES SKY_EXPOSURE_LIST SKY_EXCLUDE_EXPOSURES
     # shellcheck disable=SC1090
     source "$GWP_SET_CONF"
 
@@ -63,6 +63,13 @@ load_set() {
     # SKY_ONLY=1: a set that only builds sky frames (the broad bands, whose
     # flats are already in DECam/calib); run_calib.sh refuses its flat steps.
     SKY_ONLY=${SKY_ONLY:-0}
+    # SKY_GWPRIMO_FLATS=1 (with SKY_ONLY=1): the set's flats are the medium-band
+    # ones the flat sets certified into CALIB_COLLECTION, not DECam's (sets/sky-2026.conf).
+    SKY_GWPRIMO_FLATS=${SKY_GWPRIMO_FLATS:-0}
+    # SKY_SUPERSEDED_BY=<set>: another set builds this set's sky frames, and
+    # run_calib.sh refuses the sky steps here (two sky windows for one filter
+    # cannot both be certified).
+    SKY_SUPERSEDED_BY=${SKY_SUPERSEDED_BY:-}
     # Optional sky-frame selection: only science exposures at least
     # SKY_MIN_EXPTIME seconds long, and at most SKY_MAX_EXPOSURES per physical
     # filter, picked by the sky_select step into SKY_EXPOSURE_LIST (relative
@@ -71,6 +78,14 @@ load_set() {
     SKY_MIN_EXPTIME=${SKY_MIN_EXPTIME:-}
     SKY_MAX_EXPOSURES=${SKY_MAX_EXPOSURES:-}
     SKY_EXPOSURE_LIST=${SKY_EXPOSURE_LIST:-}
+    # Exposure ids (space separated) left out of every sky step, e.g. ones
+    # whose cpSkyImage fails every time ("All pixels masked"): one failed
+    # quantum makes pipetask skip the whole filter's combine. sky.sh lists the
+    # failures at the end of its log. Applied on top of the selection, so
+    # sky_select's list stays as it was.
+    SKY_EXCLUDE_EXPOSURES=${SKY_EXCLUDE_EXPOSURES:-}
+    [[ -z $SKY_EXCLUDE_EXPOSURES || $SKY_EXCLUDE_EXPOSURES =~ ^[0-9]+( +[0-9]+)*$ ]] \
+        || die "SKY_EXCLUDE_EXPOSURES must be exposure ids separated by spaces: '$SKY_EXCLUDE_EXPOSURES'"
     if [[ -n $SKY_MAX_EXPOSURES ]]; then
         [[ -n $SKY_EXPOSURE_LIST ]] || SKY_EXPOSURE_LIST=$SET.sky_exposures
         [[ $SKY_EXPOSURE_LIST == /* ]] || SKY_EXPOSURE_LIST=$(dirname "$GWP_SET_CONF")/$SKY_EXPOSURE_LIST
@@ -90,12 +105,23 @@ load_set() {
     RAW_INPUTS=DECam/raw/all,DECam/calib/curated/19700101T000000Z,DECam/calib/unbounded
     FLAT_INPUTS=$RAW_INPUTS,DECam/calib,$OVERSCAN_COLLECTION
     # verify and the sky frames read the certified flats, so the GW-Primo
-    # calibrations come first.
+    # calibrations come first. A sky-only set's flats are DESGW's, in
+    # DECam/calib, and CALIB_COLLECTION does not exist before the first
+    # certify, so those sets leave it out (and must keep doing so: pipetask
+    # refuses a different -i for an existing output chain).
     VERIFY_INPUTS=$RAW_INPUTS,$CALIB_COLLECTION,DECam/calib,$OVERSCAN_COLLECTION
-    SKY_INPUTS=$VERIFY_INPUTS
+    if [[ $SKY_ONLY == 1 && $SKY_GWPRIMO_FLATS != 1 ]]; then
+        SKY_INPUTS=$RAW_INPUTS,DECam/calib,$OVERSCAN_COLLECTION
+    else
+        SKY_INPUTS=$VERIFY_INPUTS
+    fi
     SKY_PIPELINE=${SKY_PIPELINE:-$GWP_CALIB_DIR/configs/gwprimo_cpSky.yaml}
 
     # Check thresholds.
+    # A few raws are unreadable (truncated files) and fail overscan on every
+    # run; the set goes on without them if they are at most this fraction of
+    # its raws (rounded up). More means overscan has not finished.
+    OVERSCAN_MAX_MISSING_FRAC=${OVERSCAN_MAX_MISSING_FRAC:-0.002}
     FLAT_MIN_EXPOSURES=${FLAT_MIN_EXPOSURES:-5}
     # Each sky pixel is a clipped mean over the exposures, with sources masked;
     # fewer than this many leaves too much noise and source residue.
@@ -119,10 +145,11 @@ load_set() {
         [[ -n $ids ]] || die "$SKY_EXPOSURE_LIST lists no exposures"
         SKY_QUERY+=" AND exposure IN ($ids)"
     fi
+    [[ -n $SKY_EXCLUDE_EXPOSURES ]] && SKY_QUERY+=" AND exposure NOT IN ($(echo $SKY_EXCLUDE_EXPOSURES | tr -s ' ' ,))"
 
-    export SET SKY_ONLY BANDS CALIB_COLLECTION OVERSCAN_COLLECTION FLAT_COLLECTION VERIFY_COLLECTION \
+    export SET SKY_ONLY SKY_GWPRIMO_FLATS BANDS CALIB_COLLECTION OVERSCAN_COLLECTION FLAT_COLLECTION VERIFY_COLLECTION \
         SKY_COLLECTION FLAT_QUERY SKY_QUERY SKY_BASE_QUERY CERT_BEGIN CERT_END FLAT_MIN_EXPOSURES \
-        SKY_MIN_EXPOSURES SKY_MAX_EXPOSURES SKY_EXPOSURE_LIST
+        SKY_MIN_EXPOSURES SKY_MAX_EXPOSURES SKY_EXPOSURE_LIST SKY_EXCLUDE_EXPOSURES OVERSCAN_MAX_MISSING_FRAC
 }
 
 # require_sky_selection   Steps that build sky frames call this: with a
@@ -141,6 +168,30 @@ step_query() {
         sky) echo "$SKY_QUERY" ;;
         *) die "unknown calibration '$1' (flat or sky)" ;;
     esac
+}
+
+# query_without_overscan_gaps flat|sky   The query of the steps after
+# overscan (flat, verify, sky): step_query without the raws that have no
+# overscanRaw. Those are raws overscan could not read, which would fail their
+# ISR quantum again, and pipetask skips everything downstream of a failed
+# quantum: for a combine, the whole filter. Fails (logged) if they are more
+# than OVERSCAN_MAX_MISSING_FRAC of the raws, i.e. overscan has not finished.
+# Needs init_step first.
+query_without_overscan_gaps() {
+    local kind=$1 out query rc
+    out=$(mktemp) || return 1
+    run_logged python "$GWP_CALIB_DIR/gwprimo_flats.py" overscan-gaps --kind "$kind" --where-out "$out" >&2
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+        query=$(step_query "$kind") || rc=1
+        [[ -s $out ]] && query+=" AND $(cat "$out")"
+        echo "$query"
+    else
+        log "ERROR: too many of the set's raws have no overscanRaw (see above): finish the overscan step first" \
+            | tee -a "$LOGFILE" >&2
+    fi
+    rm -f "$out"
+    return $rc
 }
 
 # init_step <name>   Sets LOGFILE and starts the log.
@@ -164,6 +215,13 @@ finish_step() {
 # puts each new RUN at the front of the chain).
 latest_run() {
     butler query-collections "$REPO" "$1/*" | awk '$2 == "RUN" { print $1 }' | sort | tail -1
+}
+
+# own_runs <chain>   The RUNs named <chain>/..., comma separated (empty if
+# none): what --skip-existing-in needs to skip work done by earlier runs of
+# the chain. Plain --skip-existing looks only in the new, empty output RUN.
+own_runs() {
+    butler query-collections "$REPO" "$1/*" | awk '$2 == "RUN" { print $1 }' | paste -sd, -
 }
 
 # submit <name> <dependency-job-id or empty> <script> [args...]

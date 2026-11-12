@@ -27,6 +27,18 @@ sees the selection the pipetask runs used.
                   them). Every set's overscan writes to the one chain, and
                   pipetask rewrites a chain from what it read moments before,
                   so two runs starting together can drop each other's RUN.
+  summarize-failures
+                  the failed quanta in a pipetask log (--log), split into
+                  transient (database connection errors: rerun) and
+                  deterministic (the data: candidates for exclusion)
+  overscan-gaps   the raws of the set (--kind flat: FLAT_QUERY, sky:
+                  SKY_QUERY) that have no overscanRaw; exit 1 if they are more
+                  than OVERSCAN_MAX_MISSING_FRAC of them (overscan unfinished).
+                  --where-out writes a where clause leaving them out: a raw
+                  overscan cannot read (a truncated file) would fail its ISR
+                  quantum again later, and pipetask skips everything
+                  downstream of a failed quantum, for a combine the whole
+                  filter.
 
 Every subcommand prints what it found.
 """
@@ -34,6 +46,7 @@ Every subcommand prints what it found.
 import argparse
 import math
 import os
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -435,6 +448,148 @@ def cmd_relink_overscan(args):
     return rep.finish()
 
 
+# Exceptions that say the infrastructure failed, not the data: the Postgres
+# server out of connection slots ("remaining connection slots are reserved for
+# roles with the SUPERUSER attribute"), dropped or refused connections,
+# timeouts. Rerunning redoes those quanta.
+TRANSIENT_EXCEPTION = re.compile(
+    r"(OperationalError|InterfaceError|DisconnectionError|TimeoutError|ConnectionError|"
+    r"ConnectionResetError|ConnectionRefusedError|ConnectionAbortedError|BrokenPipeError)\b")
+EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Interrupt))\b")
+FAILED_QUANTUM = re.compile(r"Task <(\w+) dataId=\{(.*)\}> failed")
+
+
+def cmd_summarize_failures(args):
+    """Sort the failed quanta in a pipetask log into transient and deterministic.
+
+    pipetask reports failures in batches: a run of tracebacks (their last
+    top-level `...Error: ...` lines) and then a run of "Task <...> failed"
+    lines, so a quantum's own traceback can be several lines back. Each batch
+    of failures is therefore classified from the exceptions of the run just
+    before it: all transient (TRANSIENT_EXCEPTION) or all not. A batch with
+    both, or with no exception line, is "unclassified": it cannot be told
+    apart per quantum, and rerunning (after which the transient ones are
+    gone) sorts it out. Only exposures with a deterministic failure are
+    offered for SKY_EXCLUDE_EXPOSURES; failed quanta without an exposure
+    (combines) and unclassified ones never are.
+    """
+    failures = []  # (task, exposure or None, kind, cause)
+    exceptions, batch = [], []
+
+    def flush():
+        if batch:
+            if not exceptions:
+                kind, cause = "unclassified", "no exception line found"
+            else:
+                flags = {bool(TRANSIENT_EXCEPTION.search(e)) for e in exceptions}
+                if flags == {True}:
+                    kind, cause = "transient", exceptions[-1]
+                elif flags == {False}:
+                    kind, cause = "deterministic", exceptions[-1]
+                else:
+                    kind, cause = "unclassified", "batch with transient and other exceptions: " + \
+                        "; ".join(sorted({e[:60] for e in exceptions}))
+            failures.extend((task, exposure, kind, cause) for task, exposure in batch)
+        batch.clear()
+
+    with open(args.log, errors="replace") as f:
+        for line in f:
+            if EXCEPTION_LINE.match(line):
+                if batch:
+                    flush()
+                    exceptions.clear()
+                exceptions.append(line.strip())
+                continue
+            m = FAILED_QUANTUM.search(line)
+            if m:
+                exposure = re.search(r"\bexposure: (\d+)", m.group(2))
+                batch.append((m.group(1), int(exposure.group(1)) if exposure else None))
+    flush()
+    if not failures:
+        print("no failed quanta in the log")
+        return 0
+
+    by_kind = defaultdict(list)
+    for failure in failures:
+        by_kind[failure[2]].append(failure)
+    print(f"{len(failures)} failed quanta: {len(by_kind['transient'])} transient, "
+          f"{len(by_kind['deterministic'])} deterministic, {len(by_kind['unclassified'])} unclassified")
+
+    if by_kind["transient"]:
+        print("transient (the infrastructure failed, not the data; nothing to exclude):")
+        for cause in sorted({f[3][:150] for f in by_kind["transient"]}):
+            print(f"    {cause}")
+        print("  these quanta have no outputs: rerun this step (finished quanta are skipped) to redo them,")
+        print("  with fewer calibration jobs running at once if the Postgres connection limit is the cause.")
+    for label in ("deterministic", "unclassified"):
+        if not by_kind[label]:
+            continue
+        print(f"{label}:")
+        seen = defaultdict(set)
+        for task, exposure, _, cause in by_kind[label]:
+            seen[exposure].add((task, cause[:150]))
+        for exposure in sorted(seen, key=lambda e: (e is None, e)):
+            what = "; ".join(f"{task}: {cause}" for task, cause in sorted(seen[exposure]))
+            print(f"    {'exposure ' + str(exposure) if exposure is not None else 'no exposure id'}  ({what})")
+        if label == "unclassified":
+            print("  rerun this step: whatever fails again alone is then classified.")
+    exposures = sorted({f[1] for f in by_kind["deterministic"] if f[1] is not None})
+    if exposures:
+        current = os.environ.get("SKY_EXCLUDE_EXPOSURES", "").split()
+        merged = current + [str(e) for e in exposures if str(e) not in current]
+        print("a failed quantum makes pipetask skip everything downstream of it, for a failed cpSkyImage the")
+        print("whole filter's combine. To leave the deterministic ones out, set in the set conf and rerun this step:")
+        print(f'    SKY_EXCLUDE_EXPOSURES="{" ".join(merged)}"')
+    return 0
+
+
+def cmd_overscan_gaps(args):
+    from lsst.daf.butler import MissingCollectionError
+
+    rep = Report()
+    registry = get_butler().registry
+    query_var = "FLAT_QUERY" if args.kind == "flat" else "SKY_QUERY"
+    chain = env("OVERSCAN_COLLECTION")
+    max_frac = float(env("OVERSCAN_MAX_MISSING_FRAC"))
+    raws, _ = raw_exposures(registry, query_var)
+    try:
+        done = {(ref.dataId["exposure"], ref.dataId["detector"])
+                for ref in registry.queryDatasets("overscanRaw", collections=chain, where=env(query_var),
+                                                  findFirst=True)}
+    except MissingCollectionError:
+        done = set()
+    rep.out(f"set {env('SET')}: {args.kind} raws without overscanRaw in {chain}")
+    rep.out(f"  {'physical filter':34s} {'raws':>6s} {'missing':>7s}")
+    total, missing = 0, []
+    for pf in sorted(raws):
+        pairs = [(exposure, detector) for exposure, detectors in raws[pf].items() for detector in detectors]
+        gaps = [p for p in pairs if p not in done]
+        rep.out(f"  {pf:34s} {len(pairs):6d} {len(gaps):7d}")
+        total += len(pairs)
+        missing += gaps
+    missing.sort()
+    for exposure, detector in missing[:50]:
+        rep.out(f"  missing: exposure {exposure} detector {detector}")
+    if len(missing) > 50:
+        rep.out(f"  ... and {len(missing) - 50} more")
+    limit = math.ceil(max_frac * total)
+    if not total:
+        rep.error(f"{query_var} selects no raws")
+    elif len(missing) > limit:
+        rep.error(f"{len(missing)} of {total} raws have no overscanRaw, more than OVERSCAN_MAX_MISSING_FRAC="
+                  f"{max_frac} allows ({limit}): has the overscan step finished? If these raws are unreadable, "
+                  "raise OVERSCAN_MAX_MISSING_FRAC in the set conf")
+    elif missing:
+        rep.warn(f"{len(missing)} of {total} raws have no overscanRaw (up to {limit} allowed); "
+                 "the flat, verify and sky steps leave them out")
+    if args.where_out:
+        with open(args.where_out, "w") as f:
+            if missing and not rep.errors:
+                pairs = " OR ".join(f"(exposure={exposure} AND detector={detector})" for exposure, detector in missing)
+                f.write(f"NOT ({pairs})\n")
+    return rep.finish(args.summary_file)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -470,6 +625,16 @@ def main():
     p = sub.add_parser("relink-overscan", help="put orphaned overscanRaw RUNs back in their chain")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_relink_overscan)
+
+    p = sub.add_parser("summarize-failures", help="transient vs deterministic failed quanta in a pipetask log")
+    p.add_argument("--log", required=True)
+    p.set_defaults(func=cmd_summarize_failures)
+
+    p = sub.add_parser("overscan-gaps", help="raws without overscanRaw: gate and exclusion clause")
+    p.add_argument("--kind", choices=["flat", "sky"], required=True)
+    p.add_argument("--where-out", help="write the where clause leaving those raws out to this file")
+    p.add_argument("--summary-file")
+    p.set_defaults(func=cmd_overscan_gaps)
 
     args = parser.parse_args()
     sys.exit(args.func(args))

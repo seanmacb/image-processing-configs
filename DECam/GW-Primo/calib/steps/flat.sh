@@ -17,7 +17,9 @@
 # rerun would leave flats finished earlier in an older RUN.
 #
 # The job exits 0 even if some quanta failed; check.sh decides from what was
-# produced (every detector needs a flat before anything is certified).
+# produced (every detector needs a flat before anything is certified). Dome
+# flats overscan could not read are left out (query_without_overscan_gaps in
+# common.sh); the job fails if overscan has not finished.
 #
 #   flat.sh        (GWP_SET_CONF and GWP_CALIB_DIR come from run_calib.sh)
 
@@ -25,13 +27,14 @@ GWP_CALIB_DIR=${GWP_CALIB_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd
 source "$GWP_CALIB_DIR/common.sh"
 load_set
 init_step flat
+QUERY=$(query_without_overscan_gaps flat) || { finish_step; exit 1; }
 
 run_logged pipetask --long-log run --register-dataset-types -j "$NPROC" \
     -b "$REPO" --instrument lsst.obs.decam.DarkEnergyCamera \
     -i "$FLAT_INPUTS" \
     -o "$FLAT_COLLECTION" \
     -p "$CP_PIPE_DIR/pipelines/DECam/cpFlat.yaml" \
-    -d "$FLAT_QUERY"
+    -d "$QUERY"
 rc=$?
 [[ $rc -ne 0 ]] && log "WARNING: pipetask exited with status $rc; check.sh decides whether the flats are usable" | tee -a "$LOGFILE"
 finish_step

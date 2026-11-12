@@ -16,6 +16,7 @@
 # Then gwprimo_flats.py verify-summary prints cp_verify's pass/fail per filter
 # and per exposure, and exits 1 if any filter failed. Nothing depends on this
 # job: a failure only flags the set for a look (and possibly decertify).
+# Like flat.sh, it leaves out the dome flats overscan could not read.
 #
 #   verify.sh        (GWP_SET_CONF and GWP_CALIB_DIR come from run_calib.sh)
 
@@ -24,13 +25,14 @@ source "$GWP_CALIB_DIR/common.sh"
 load_set
 init_step verify
 export PYTHONPATH=$IMAGE_PROC_CONFIG_DIR/configs:$PYTHONPATH
+QUERY=$(query_without_overscan_gaps flat) || { finish_step; exit 1; }
 
 run_logged pipetask --long-log run --register-dataset-types -j "$NPROC" \
     -b "$REPO" --instrument lsst.obs.decam.DarkEnergyCamera \
     -i "$VERIFY_INPUTS" \
     -o "$VERIFY_COLLECTION" \
     -p "$IMAGE_PROC_CONFIG_DIR/configs/desgw_verify_flat.yaml" \
-    -d "$FLAT_QUERY"
+    -d "$QUERY"
 prc=$?
 [[ $prc -ne 0 ]] && log "WARNING: pipetask exited with status $prc" | tee -a "$LOGFILE"
 

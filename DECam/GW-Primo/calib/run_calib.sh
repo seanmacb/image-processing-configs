@@ -14,11 +14,12 @@
 #   run_calib.sh sets/2026-06.conf --steps overscan,flat,check --dry-run
 #   run_calib.sh sets/2026-06.conf --steps overscan,flat,check
 #   run_calib.sh sets/2026-06.conf --steps certify,verify
-#   run_calib.sh sets/2026-06.conf --steps sky_select,sky_overscan,sky,sky_check
-#   run_calib.sh sets/2026-06.conf --steps sky_certify
+#   run_calib.sh sets/sky-2026.conf --steps sky_select,sky_overscan,sky,sky_check
+#   run_calib.sh sets/sky-2026.conf --steps sky_certify
 #
-# Sky-only sets (SKY_ONLY=1, the broad-band sets/sky-*.conf, whose flats are
-# in DECam/calib) have only the sky steps; `all` means those for them.
+# Sky-only sets (SKY_ONLY=1, the sets/sky-*.conf: the broad bands, whose flats
+# are in DECam/calib, and sky-2026 for the medium bands, whose flats are the
+# certified GW-Primo ones) have only the sky steps; `all` means those for them.
 #
 #   run_calib.sh <set conf> --steps <list> [--dry-run]
 #
@@ -83,7 +84,8 @@ for s in "${STEP_LIST[@]}"; do
     for i in "${!ALL_STEPS[@]}"; do [[ ${ALL_STEPS[$i]} == "$s" ]] && idx=$i; done
     [[ $idx -ge 0 ]] || die "unknown step '$s' (one of ${ALL_STEPS[*]})"
     [[ $prev -lt 0 || $idx -eq $((prev + 1)) ]] || die "steps must be consecutive, in the order ${ALL_STEPS[*]}; got '$STEPS'"
-    [[ $SKY_ONLY == 1 && $idx -lt ${#FLAT_STEPS[@]} ]] && die "set $SET is sky-only (SKY_ONLY=1): its flats come from DECam/calib, so it has no '$s' step"
+    [[ $SKY_ONLY == 1 && $idx -lt ${#FLAT_STEPS[@]} ]] && die "set $SET is sky-only (SKY_ONLY=1): its flats are already certified, so it has no '$s' step"
+    [[ -n $SKY_SUPERSEDED_BY && $s == sky_* ]] && die "set $SET: its sky frames are built by set $SKY_SUPERSEDED_BY (SKY_SUPERSEDED_BY in the conf), so it has no '$s' step"
     prev=$idx
 done
 
