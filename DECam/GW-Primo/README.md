@@ -46,8 +46,9 @@ $EDITOR ../fields/MYFIELD/field.conf         # FIELD, REGION, BANDS, CALIB_COLLE
 ```
 
 `--steps all` chains everything. A failed check stops the chain; fix the
-problem and resubmit from that step, since every step uses `pipetask
---skip-existing`. A step's script can also be run directly, without Slurm:
+problem and resubmit from that step: every step skips the quanta that earlier
+runs into the same output chain finished (`--skip-existing-in` those RUNs;
+plain `--skip-existing` would look only in the new, empty RUN). A step's script can also be run directly, without Slurm:
 `GWP_CONF=<conf> bash steps/step1.sh`.
 
 ## Selecting a region
@@ -123,11 +124,11 @@ section):
 
 | Step | What it does |
 |---|---|
-| `overscan` | cp_pipe `RunIsrForCrosstalkSources.yaml` on the set's dome flats, into `DECam/calib/GW-Primo/overscanRaw` (shared by every set). Afterwards `gwprimo_flats.py relink-overscan` puts back any RUN of that chain that a concurrent set's pipetask dropped from it (pipetask rewrites the chain from what it read a moment earlier). |
-| `flat` | cp_pipe DECam `cpFlat.yaml`, one combined flat per (physical filter, detector), into `DECam/calib/GW-Primo/flat/<SET>`. Detectors 61 and 31 are skipped, as in the science queries. Always a complete new RUN (no `--skip-existing`), because the later steps read only the newest RUN. |
+| `overscan` | cp_pipe `RunIsrForCrosstalkSources.yaml` on the set's dome flats, into `DECam/calib/GW-Primo/overscanRaw` (shared by every set). Afterwards `gwprimo_flats.py relink-overscan` puts back any RUN of that chain that a concurrent set's pipetask dropped from it (pipetask rewrites the chain from what it read a moment earlier). The job passes if at most `OVERSCAN_MAX_MISSING_FRAC` (0.2%, rounded up) of the set's raws have no `overscanRaw`, whatever pipetask's status: a few raws are unreadable (truncated files) and fail on every run. Missing pairs are listed in `$LOGDIR/gwprimo_calib_<SET>_flat_overscan_gaps.txt`. A job killed at its time limit fails; rerun the step, which skips what exists. |
+| `flat` | cp_pipe DECam `cpFlat.yaml`, one combined flat per (physical filter, detector), into `DECam/calib/GW-Primo/flat/<SET>`. Detectors 61 and 31 are skipped, as in the science queries, and so are the (exposure, detector) pairs without `overscanRaw`: their ISR would fail again, and pipetask skips everything downstream of a failed quantum, here the whole filter's combine. Fails if more are missing than `overscan` allows. Always a complete new RUN (no `--skip-existing`), because the later steps read only the newest RUN. |
 | `check` | The gate before certifying: at least `FLAT_MIN_EXPOSURES` (5) dome flats per filter and a flat for every detector they cover. Prints per-filter medians of the binned flats (`flatBin64`) and flags detectors outside 0.5-1.5 (warnings). Writes `$LOGDIR/gwprimo_calib_<SET>_flat_check.txt`. |
 | `certify` | `butler certify-calibrations` of that RUN into the CALIBRATION collection `DECam/calib/GW-Primo` (created on first use) for the set's window. The shared `DECam/calib` is not touched. |
-| `verify` | cp_verify with DESGW's `desgw_verify_flat.yaml` (the DECam MJD fix), then a pass/fail per filter and exposure in `$LOGDIR/gwprimo_calib_<SET>_flat_verify.txt`. |
+| `verify` | cp_verify with DESGW's `desgw_verify_flat.yaml` (the DECam MJD fix), on the same dome flats as `flat`, then a pass/fail per filter and exposure in `$LOGDIR/gwprimo_calib_<SET>_flat_verify.txt`. |
 
 ```bash
 cd DECam/GW-Primo/calib
@@ -154,33 +155,55 @@ zero points, where jointcal's per-detector fit absorbs part of them.
 
 ## Sky frames
 
+> **Status: not used.** The sky frames built so far are not usable (sky-2026 N395: detector-to-detector offsets of several units and streaks, against a median near 0 and a scatter near 0.001 for a good frame; the 23-24 and 25-26 broad-band sets were also high). `fields/S250830bp` sets `SKY_FRAMES=off`, so step 2 runs `skyCorr` with `doSky: false` on the dome flats alone, and nothing here needs to be certified before processing. The steps below are kept for a later attempt.
+
 A sky frame is the static background pattern (scattered light, pupil ghost,
 residual illumination) left in flat-fielded science images; `skyCorr` subtracts
 it, scaled per visit, when `doSky` is on. It is built from the science
 exposures themselves, with sources masked, so it needs the set's flats
 certified first. The same set conf drives it: the science exposures of its
 bands and nights (all programs; with these nights that is only 2026A-271131),
-certified for the same window as the flats.
+certified for the same window as the flats. For the medium bands that is one
+set for all of 2026, `calib/sets/sky-2026.conf` (below); `2026-06.conf` and
+`2026-07.conf` only build flats (`SKY_SUPERSEDED_BY` makes `run_calib.sh`
+refuse their sky steps).
 
 | Step | What it does |
 |---|---|
 | `sky_select` | Only for sets with `SKY_MAX_EXPOSURES`: `gwprimo_flats.py select-sky` picks at most that many exposures per filter (the longest of each night and 0.5-deg pointing cell, round-robin over nights) into `sets/<SET>.sky_exposures`, and the later sky steps use exactly that list. A no-op for the medium-band sets, which use every exposure. |
-| `sky_overscan` | `overscanRaw` for those science exposures, into the same `DECam/calib/GW-Primo/overscanRaw`, with the same relink afterwards. |
-| `sky` | `calib/configs/gwprimo_cpSky.yaml`: cp_pipe DECam `cpSky.yaml` with its ISR set like the science ISR. The cp_pipe file leaves `cpSkyIsr` looking for crosstalk sources under IsrTask's default name, which this repo never writes, and its amp-offset override is mis-indented and never applied. One `sky` per (physical filter, detector), into `DECam/calib/GW-Primo/sky/<SET>`, a complete new RUN each time. |
+| `sky_overscan` | `overscanRaw` for those science exposures, into the same `DECam/calib/GW-Primo/overscanRaw`, with the same relink and the same `OVERSCAN_MAX_MISSING_FRAC` gate afterwards (`..._sky_overscan_gaps.txt`). |
+| `sky` | `calib/configs/gwprimo_cpSky.yaml`: cp_pipe DECam `cpSky.yaml` with its ISR set like the science ISR. The cp_pipe file leaves `cpSkyIsr` looking for crosstalk sources under IsrTask's default name, which this repo never writes, and its amp-offset override is mis-indented and never applied. One `sky` per (physical filter, detector), into `DECam/calib/GW-Primo/sky/<SET>`, one RUN that a rerun extends (below). Like `flat`, it leaves out the raws without `overscanRaw` and fails if `sky_overscan` has not finished; it also leaves out `SKY_EXCLUDE_EXPOSURES`. 3-day time limit. |
 | `sky_check` | The gate: at least `SKY_MIN_EXPOSURES` (20) science exposures per filter and a sky frame for every detector; per-filter median and spread of the sky frames, and detectors with non-finite pixels. Filters with no science that run (M517 in June) only warn. Writes `$LOGDIR/gwprimo_calib_<SET>_sky_check.txt`. |
 | `sky_certify` | `butler certify-calibrations ... sky` into `DECam/calib/GW-Primo` for the set's window. |
 
 ```bash
-# after certify,verify of the same set:
-./run_calib.sh sets/2026-07.conf --steps sky_select,sky_overscan,sky,sky_check
-./run_calib.sh sets/2026-07.conf --steps sky_certify
+# after certify,verify of BOTH flat sets (2026-06 and 2026-07):
+./run_calib.sh sets/sky-2026.conf --steps sky_select,sky_overscan,sky,sky_check
+./run_calib.sh sets/sky-2026.conf --steps sky_certify
 ```
+
+`sets/sky-2026.conf` is a sky-only set (`SKY_ONLY=1`) with
+`SKY_GWPRIMO_FLATS=1`: its `sky` step reads the certified medium-band flats in
+`DECam/calib/GW-Primo`, so both flat sets must be certified first. It covers
+every medium and narrow band (N395 M411 M438 M464 M490 M517 N540) over
+`day_obs` 20260101-20261031 and is certified for [2026-01-01, 2026-11-01). The
+science exposures of 2026 in these bands are the 2026A-271131 follow-up only,
+on the four nights the flat sets cover (359 exposures, 32 to 96 per filter), so
+the year adds no exposures over the two runs; it gives one job, one check and
+one certify, and M517 a single sky frame. The RUNs that `sky` built for
+`2026-06` (no frames) and `2026-07` (none) are not used. The `sky_overscan` step
+mostly finds its work done: all but 8 of the 21540 raws already have
+`overscanRaw` from those earlier jobs. The job is 65,399 quanta (0 failed); it ran in about 20.5 h on 30 processes and
+fitted in 116 GB, although the 2026-07 job on its own, 11.8k raws, was
+killed for memory while building its graph (cause not found).
 
 **Broad-band sky sets.** `skyCorr` needs a sky frame for every band of a
 visit list, so the archival g r i z visits of `fields/S250830bp` need them too.
 `calib/sets/sky-<era>.conf` are sky-only sets (`SKY_ONLY=1`; the flats are
 DESGW's, already in `DECam/calib`), one per flat era of `DECam/calib`, so each
-sky frame is certified for exactly the window of the flat it was built with:
+sky frame is certified for exactly the window of the flat it was built with.
+Their `sky` step reads `DECam/calib` but not `DECam/calib/GW-Primo`, so they
+need no GW-Primo certification first:
 
 | Set | Window | Bands (the field's visits in that era) |
 |---|---|---|
@@ -212,6 +235,40 @@ done
 
 With these six and the two medium-band sets certified, every (filter, night)
 of `fields/S250830bp` has a sky frame, and `SKY_FRAMES=auto` turns `doSky` on.
+**Time limits and resuming.** A broad-band set is 40,000 to 90,000 quanta
+(four full-image stages for up to 150 exposures per filter x 60 detectors).
+The first runs made 1 to 2.4k quanta/h on 30 processes and all six hit the 24 h
+limit before `cpSkyCombine`. The `sky` step therefore has a 3-day limit and
+resumes: if `DECam/calib/GW-Primo/sky/<SET>` already has a RUN, it runs
+`--extend-run --skip-existing --rebase` into it, so finished quanta are skipped and the
+newest RUN still holds the whole set for `sky_check` and `sky_certify`. A job
+that times out is just resubmitted (`run_calib.sh sets/<SET>.conf --steps
+sky,sky_check`). `--rebase` resets the chain's recorded inputs to the current ones
+(the `overscanRaw` chain keeps growing, and pipetask otherwise refuses to extend).
+pipetask still refuses to extend a RUN whose task configs differ.
+To rebuild from scratch into a new RUN, put `SKY_FRESH=1` in the environment of
+the submission (`SKY_FRESH=1 ./run_calib.sh ... --steps sky`).
+
+**Failed quanta.** One failed quantum makes pipetask skip everything
+downstream of it; for a failed `cpSkyImage` or `cpSkyIsr` that is the whole
+combine of that filter. At its end `sky.sh` runs `gwprimo_flats.py
+summarize-failures` on its log and sorts the failures:
+
+- *Transient*: the infrastructure failed, e.g. `OperationalError ... remaining
+  connection slots are reserved` when the Postgres server runs out of
+  connections (seen with many calibration jobs at once; it cost 19 quanta in
+  sky-17-18 and 17 in 2026-06). Nothing is excluded: those quanta have no
+  outputs, so rerunning the step redoes just them. Run fewer jobs at once.
+- *Deterministic*: an exception from the data, e.g. `cpSkyImage` failing with
+  "All pixels masked. Cannot estimate background." Only for these does the
+  report print the line to paste into the set conf,
+  `SKY_EXCLUDE_EXPOSURES="<ids>"`, which leaves those exposures out of every
+  sky step. It is set for the g exposures that failed this way in sky-15-16
+  (3), sky-17-18 (3) and sky-19-20 (4).
+- *Unclassified*: a batch of failures with both kinds of exception, or none
+  found, cannot be told apart per quantum. Rerun; whatever fails again alone
+  is classified then.
+
 `sky_select` rewrites `sets/<SET>.sky_exposures` each time it runs. Commit the
 list with the sky frames it produced, and rerun it only to rebuild them.
 
@@ -231,9 +288,11 @@ filters (M411, N540) than for N395.
 
 One `skyCorr` config serves every band, so `auto` stays off for
 `fields/S250830bp` until the broad-band sets above are certified as well.
+`fields/S250830bp` sets `off` explicitly, so certifying sky frames later cannot
+switch it on by itself.
 Decide before step 2 first runs: if `skyCorr` already ran in
 `OUTPUT_COLLECTION` with the other setting, step 2 stops, because
-`--skip-existing` would keep the old outputs. Use a new `OUTPUT_COLLECTION`,
+skipping finished quanta would keep the old outputs. Use a new `OUTPUT_COLLECTION`,
 or set `SKY_FRAMES` to the old behaviour. `00_preflight.sh` reports which way
 step 2 will go.
 
@@ -283,10 +342,10 @@ Also needed and checked: visits defined for every raw (`butler define-visits`),
 - **Pipeline `python:` blocks are exec'd with separate locals**, so a
   comprehension inside one cannot see names the block defined (`NameError`).
   The blocks use plain loops for this reason.
-- **No sky frames yet.** `DECam/calib` has no `sky` calibration for any
-  filter, so `skyCorr` runs with `doSky: false` until every filter and night of
-  a field has one ([Sky frames](#sky-frames)). It still fits the
-  full-focal-plane background, but not the static sky pattern.
+- **No sky frames.** `DECam/calib` has no `sky` calibration for any filter and
+  the ones built here were not usable, so `fields/S250830bp` runs `skyCorr`
+  with `doSky: false` (`SKY_FRAMES=off`; [Sky frames](#sky-frames)). It still
+  fits the full-focal-plane background, but not the static sky pattern.
 - **`the_monster_20250219` everywhere.** The drp_pipe, jointcal and
   analysis_tools default refcats (`gaia_dr3_20230707`, `ps1_pv3_3pi_20170110`,
   `gaia_dr2_20200414`) are not in this repo, and PS1 does not reach Dec -77.
@@ -295,6 +354,12 @@ Also needed and checked: visits defined for every raw (`butler define-visits`),
   step jobs therefore always exit 0 and record the pipetask status in
   `$LOGDIR/gwprimo_<FIELD>_stepN.status`; the check job decides from what was
   produced.
+- **Truncated raws.** A handful of archival raws in `DECam/raw/all` cannot be
+  read ("decompression error: hit end of compressed byte stream"), e.g. one
+  or two per broad-band sky set. They fail `overscan` on every run; `flat`,
+  `verify` and `sky` leave them out, because one failed ISR quantum would
+  make pipetask skip that filter's whole combine. Raise
+  `OVERSCAN_MAX_MISSING_FRAC` in a set conf only for raws you know are bad.
 - **Retire a calib `overscanRaw` RUN with `butler remove-runs`**, not by taking
   it out of the `DECam/calib/GW-Primo/overscanRaw` chain: every `overscan` and
   `sky_overscan` job relinks the RUNs under that name that are missing from
@@ -303,8 +368,9 @@ Also needed and checked: visits defined for every raw (`butler define-visits`),
   existing output chain whose inputs differ. Adding `CALIB_COLLECTIONS` after
   step 1 has run means a new `OUTPUT_COLLECTION`.
 - **Step 3 is memory heavy.** The multiband deblender and MultiProFit hold all
-  eleven bands of a patch. It runs with `NPROC_STEP3=15` workers on a 116 GB
-  node. MultiProFit fits every band, with `allow_missing_bands` so patches
+  eleven bands of a patch. It runs with `NPROC_STEP3` workers (default: the
+  allocated memory / 8.8 GB, at most the CPUs: 81 on the 92-CPU, 700 GB node
+  that `step3.sh` requests; 15 outside Slurm). MultiProFit fits every band, with `allow_missing_bands` so patches
   without medium-band coverage are still fit. It is the slowest task; drop
   `fitDeblendedObjectsExp`/`Sersic` from `step3` if you only need
   GAaP/PSF/CModel/Kron fluxes, together with the Sersic and exponential
