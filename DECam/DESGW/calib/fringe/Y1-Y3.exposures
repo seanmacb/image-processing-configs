@@ -1,0 +1,37 @@
+# z-band fringe exposures of epoch Y1-Y3 (SVE1 SVE2 Y1E1 Y1E2 Y2E1 Y2E2 Y3), written by fringe_sky.py select
+# from: instrument='DECam' AND band='z' AND exposure.observation_type='science' AND exposure >= 133757 AND exposure <= 516846, raw in DECam/raw/all
+# exposure_time >= 60, at most 3 per 0.5-deg cell, at most 300 in all; one exposure id per line
+405526
+405528
+405530
+405938
+405940
+405942
+406250
+406252
+419137
+419141
+431141
+497251
+497252
+497253
+497254
+497255
+497256
+497257
+497259
+497272
+497273
+497274
+497276
+497279
+497280
+497282
+497283
+497284
+497285
+497286
+516817
+516818
+516819
+516820
