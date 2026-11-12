@@ -1,0 +1,77 @@
+# Per-event configuration for the too_run scripts. This file is sourced by bash:
+# it is the only thing that changes from one GW event to the next. Create a new
+# one with `new_event.sh <EVENT>` and edit the values marked REQUIRED.
+#
+# Variables left unset take the defaults in common.sh (load_conf), which lists all
+# of them. Only the ones you are likely to change are described here.
+
+# --- Event ------------------------------------------------------------------
+
+# REQUIRED. Used in every collection and log name: DECam/templates/$EVENT,
+# DECam/search/$EVENT, DECam/calib/template/$EVENT/overscanRaw, ...
+EVENT=S000000xx
+
+# REQUIRED. YYYYMMDD. Template inputs are taken from nights strictly before this
+# date, so follow-up images can never end up in a template. Use the first night
+# you may observe the event (the pilot used 20250829 for S250830bp, giving
+# template nights up to 20250828).
+EVENT_DATE=
+
+# --- Phase 1: templates -----------------------------------------------------
+
+# REQUIRED. Sky box (degrees) the templates must cover. The data query for the
+# template steps and the selection from the DELVE table both use it. RA_MIN >
+# RA_MAX means the box wraps through RA = 0.
+RA_MIN=
+RA_MAX=
+DEC_MIN=
+DEC_MAX=
+
+# Window of nights (YYYYMMDD) template exposures may come from.
+# TEMPLATE_START=20130101
+# TEMPLATE_END=<day before EVENT_DATE>
+
+# DELVE exposure table to choose template exposures from. Columns used:
+# expnum, nite, ra, dec, band, t_eff, psf_fwhm, propid.
+# TEMPLATE_CSV=<repo>/DECam/data/delve_dr3qr_combo_v10.csv
+
+# Optional quality cuts on that table. By default there are none beyond the box,
+# the nights and the bands: the good-seeing coadd selects its own inputs.
+# BANDS="g r i z"
+# TEFF_MIN=0.3          # minimum t_eff
+# FWHM_MAX=1.8          # maximum psf_fwhm, arcsec
+# MAX_PER_BAND=200      # keep only the best t_eff exposures per band
+
+# Programs never used as template inputs (the DESGW follow-up programs). The
+# search PROPID is added automatically. The default is the list in
+# startup/templates/build-template.sh; set this only to replace it.
+# TEMPLATE_EXCLUDE_PROGRAMS="2023B-851374 2024A-781233 2024B-305328 2025A-227091 2025B-485252"
+
+# --- Phase 2: search --------------------------------------------------------
+
+# REQUIRED. NOIRLab program id of the follow-up (the PROPID header of the raws,
+# `exposure.science_program` in the Butler). run_search.sh --propid overrides it
+# for a single night. The night itself is not set here: pass --night / --nights.
+PROPID=
+
+# REQUIRED. Butler collection holding the injection catalog (see
+# startup/injection/ and the header of configs/desgw_ap_pipe.yaml).
+INJECTION_COLLECTION=
+
+# Defaults worth knowing about:
+# TARGET_NAME=LVK_$EVENT      # target_name of the follow-up exposures
+# MODEL_COLLECTION=pretrained_models/tac_cnn_lsstcam_2026-02-26
+# APDB_CONFIG=/shares/soares-santos.physik.uzh/ButlerProjects/desgw_apdb/apdb_config.yaml
+# NPROC=30                    # pipetask -j
+# RAW_ROOT=/shares/soares-santos.physik.uzh/fitsFiles/desgw/$EVENT
+
+# --- Verification thresholds (fractions are 0-1) -----------------------------
+
+# MIN_RAW_PER_EXPOSURE=50             # raw datasets per ingested exposure
+# OVERSCAN_MAX_MISSING_FRAC=0.05      # overscanRaw may be missing for this share
+# TEMPLATE_MIN_COVERAGE=0.5           # share of needed (tract, patch) with a coadd, per band
+# SEARCH_TEMPLATE_MIN_COVERAGE=0.8    # same, for the night's visits, before ap_pipe
+# TEMPLATE_FWHM_WARN=1.5              # warn if a band's median template FWHM exceeds this (arcsec)
+# TEMPLATE_PSF_CHECK=1                # 0 skips measure_template_psf.py
+# AP_MIN_ISR_FRAC=0.8                 # share of visit-detectors with a calibrated image
+# AP_MIN_DIFF_FRAC=0.7                # share with a difference image
