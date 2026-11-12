@@ -1,9 +1,9 @@
 #!/usr/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
-#SBATCH --mem=116GB
-#SBATCH --time=48:00:00
+#SBATCH --cpus-per-task=120
+#SBATCH --mem=472GB
+#SBATCH --time=7-00:00:00
 #SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step1_%j.out
 #SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step1_%j.err
 

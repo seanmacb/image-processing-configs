@@ -9,7 +9,7 @@ exactly the selection the pipetask runs used.
   preflight   everything a run needs is in place: the conf's bands are in the
               pipeline, collections, skymap and refcat exist, the region has
               visits and raws per band, and every band finds a bias, a flat and
-              the other ISR calibrations for its first and last night
+              the other ISR calibrations for every night
   check       completeness of one step's outputs, per band (exit 1 below the
               conf's threshold, so the Slurm chain stops)
   summarize   every metric the step's analysis_tools tasks wrote, to a CSV and a
@@ -258,14 +258,19 @@ def cmd_preflight(args):
         elif not raws.get(band):
             rep.error(f"band {band}: visits but no raws in {env('RAW_COLLECTION')}")
 
-    # Calibrations: for each physical filter, its first and last night.
+    # Calibrations: for each physical filter, one visit of every night (the
+    # certified windows of DECam/calib are per era, so a gap in the middle of
+    # a filter's nights would be missed by checking only its ends).
     calib_collections = [n for n in inputs if collection_exists(registry, n)]
     rep.out(f"calibrations (detector {CALIB_DETECTOR}) searched in {calib_collections}:")
     for pf in sorted(visits, key=lambda p: bmap.get(p, p)):
-        recs = sorted(visits[pf], key=lambda r: r.day_obs)
         band = bmap.get(pf, "?")
         types = CALIB_TYPES + (("fringe",) if band in ("z", "y") else ())
-        for rec in {recs[0].id: recs[0], recs[-1].id: recs[-1]}.values():
+        per_night = {}
+        for rec in sorted(visits[pf], key=lambda r: r.id):
+            per_night.setdefault(rec.day_obs, rec)
+        bad = 0
+        for night, rec in sorted(per_night.items()):
             missing = []
             for calib in types:
                 data_id = {"instrument": "DECam", "detector": CALIB_DETECTOR}
@@ -279,9 +284,10 @@ def cmd_preflight(args):
                 if ref is None:
                     missing.append(calib)
             if missing:
-                rep.error(f"{pf} visit {rec.id} (night {rec.day_obs}): no {', '.join(missing)}")
-            else:
-                rep.out(f"  ok     {pf} visit {rec.id} (night {rec.day_obs}): {', '.join(types)}")
+                bad += 1
+                rep.error(f"{pf} visit {rec.id} (night {night}): no {', '.join(missing)}")
+        if not bad:
+            rep.out(f"  ok     {pf}: {', '.join(types)} on all {len(per_night)} nights")
 
     # overscanRaw that step0 still has to build.
     have = existing(registry, [overscan, skip_in] if skip_in else [overscan])

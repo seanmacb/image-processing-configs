@@ -1,9 +1,9 @@
 #!/usr/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
-#SBATCH --mem=116GB
-#SBATCH --time=72:00:00
+#SBATCH --cpus-per-task=92
+#SBATCH --mem=700GB
+#SBATCH --time=5-00:00:00
 #SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step3_%j.out
 #SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step3_%j.err
 
@@ -12,9 +12,10 @@
 # forced photometry (GAaP, PSF, CModel, Kron), MultiProFit fits and the
 # object tables.
 #
-# Runs with NPROC_STEP3 (default 15) workers on the 30-core node: the
-# multiband deblender and MultiProFit hold all bands of a patch at once and
-# need roughly twice the ~4 GB per worker of steps 1-2.
+# Runs with NPROC_STEP3 workers (default: allocated memory / 8.8 GB, at most
+# the CPUs, so 81 on the 92-CPU, 700 GB nodes this requests): the multiband
+# deblender and MultiProFit hold all bands of a patch at once and need
+# roughly twice the ~4 GB per worker of steps 1-2.
 #
 #   step3.sh        (GWP_CONF and GWP_RUN_DIR come from the driver's --export)
 

@@ -16,7 +16,8 @@
 #   run_drp.sh ../fields/S250830bp/field.conf --steps 0,1 --dry-run
 #   run_drp.sh ../fields/S250830bp/field.conf --steps 2
 # --dry-run prints the sbatch commands without submitting anything.
-# Every step is safe to repeat (pipetask --skip-existing).
+# Every step is safe to repeat (pipetask --skip-existing-in the output
+# chain's RUNs, see pipetask_drp in common.sh).
 
 GWP_NO_STACK=1
 GWP_RUN_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)

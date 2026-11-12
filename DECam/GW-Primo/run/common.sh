@@ -86,8 +86,21 @@ load_conf() {
     CALIB_COLLECTIONS=${CALIB_COLLECTIONS:-}
 
     PIPELINE=${PIPELINE:-$GWP_DIR/configs/gwprimo_drp.yaml}
-    NPROC=${NPROC:-30}
-    NPROC_STEP3=${NPROC_STEP3:-15}
+    # Workers follow the Slurm allocation (pipetask -j is single-node):
+    # one per allocated CPU for steps 1-2 (about 4 GB each), and for step 3 as
+    # many as fit at about 8.8 GB each (the multiband deblender and
+    # MultiProFit hold every band of a patch), capped at the CPUs.
+    # Outside Slurm: 30 and 15.
+    NPROC=${NPROC:-${SLURM_CPUS_PER_TASK:-30}}
+    if [[ -z ${NPROC_STEP3:-} ]]; then
+        if [[ -n ${SLURM_MEM_PER_NODE:-} && -n ${SLURM_CPUS_PER_TASK:-} ]]; then
+            NPROC_STEP3=$(( SLURM_MEM_PER_NODE / 8800 ))
+            (( NPROC_STEP3 > SLURM_CPUS_PER_TASK )) && NPROC_STEP3=$SLURM_CPUS_PER_TASK
+            (( NPROC_STEP3 < 1 )) && NPROC_STEP3=1
+        else
+            NPROC_STEP3=15
+        fi
+    fi
 
     # Collections.
     OUTPUT_COLLECTION=${OUTPUT_COLLECTION:-DECam/GW-Primo/$FIELD/drp}
@@ -173,8 +186,12 @@ init_step() {
     local name=${1:?usage: init_step <name>}
     LOGFILE=$LOGDIR/gwprimo_${FIELD}_${name}.log
     STATUS_FILE=$LOGDIR/gwprimo_${FIELD}_${name}.status
+    # One thread per pipetask worker: workers are processes, and threaded
+    # BLAS/OpenMP inside each would oversubscribe the allocated cores.
+    export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
     date | tee "$LOGFILE"
     log "field=$FIELD step=$name conf=$GWP_CONF" | tee -a "$LOGFILE"
+    log "slurm cpus=${SLURM_CPUS_PER_TASK:-?} mem_mb=${SLURM_MEM_PER_NODE:-?} NPROC=$NPROC NPROC_STEP3=$NPROC_STEP3" | tee -a "$LOGFILE"
     log "pipeline=$PIPELINE output=$OUTPUT_COLLECTION" | tee -a "$LOGFILE"
 }
 
@@ -199,21 +216,31 @@ record_pipetask_status() {
 
 # pipetask_drp <subset> <query> <nproc> [extra pipetask args...]
 # One `pipetask run` of a subset of the GW-Primo pipeline into OUTPUT_COLLECTION.
-#   --skip-existing                 safe to repeat; skips quanta already done
-#                                   in the output chain
+#   --skip-existing-in <its RUNs>   safe to repeat; skips quanta already done
+#                                   by earlier runs into the output chain
+#                                   (plain --skip-existing looks only in the
+#                                   new, empty RUN; the chain itself also holds
+#                                   the inputs, e.g. DECam/defaults)
 #   --no-raise-on-partial-outputs   one failed detector must not fail every
 #                                   downstream quantum of its visit (DESGW
 #                                   README, Gotchas)
 pipetask_drp() {
-    local subset=$1 query=$2 nproc=$3
+    local subset=$1 query=$2 nproc=$3 done_runs
     shift 3
+    done_runs=$(own_runs "$OUTPUT_COLLECTION")
     run_logged pipetask --long-log run --register-dataset-types -j "$nproc" \
-        --skip-existing --no-raise-on-partial-outputs \
+        ${done_runs:+--skip-existing-in "$done_runs"} --no-raise-on-partial-outputs \
         -b "$REPO" --instrument lsst.obs.decam.DarkEnergyCamera \
         -i "$DRP_INPUTS" \
         -o "$OUTPUT_COLLECTION" \
         -p "$PIPELINE#$subset" \
         -d "$query" "$@"
+}
+
+# own_runs <chain>   The RUNs named <chain>/..., comma separated (empty if
+# none): earlier runs of a step into that chain, for --skip-existing-in.
+own_runs() {
+    butler query-collections "$REPO" "$1/*" | awk '$2 == "RUN" { print $1 }' | paste -sd, -
 }
 
 finish_step() {

@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=30
 #SBATCH --mem=116GB
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_metrics_%j.out
 #SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_metrics_%j.err
 

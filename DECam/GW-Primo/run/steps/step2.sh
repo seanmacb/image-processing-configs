@@ -1,9 +1,9 @@
 #!/usr/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
-#SBATCH --mem=116GB
-#SBATCH --time=48:00:00
+#SBATCH --cpus-per-task=120
+#SBATCH --mem=472GB
+#SBATCH --time=4-00:00:00
 #SBATCH -o /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step2_%j.out
 #SBATCH -e /shares/soares-santos.physik.uzh/fitsFiles/calibs/logs/gwprimo_step2_%j.err
 
@@ -28,7 +28,7 @@
 #   off   off.
 # One skyCorr config covers every band, so the broad bands need sky frames
 # too before auto turns it on. The choice must also match any skyCorr already
-# run in OUTPUT_COLLECTION: --skip-existing would keep the old outputs, so a
+# run in OUTPUT_COLLECTION: skipping finished quanta keeps the old outputs, so a
 # mismatch stops here (use a new OUTPUT_COLLECTION, or set SKY_FRAMES to match).
 #
 #   step2.sh [first sub-step]     e.g. `step2.sh step2d` to resume there

@@ -18,7 +18,7 @@
 #   2. gwprimo_butler.py preflight: BANDS within the pipeline's
 #      parameters.bands; collections, skymap and the refcat over the region;
 #      visits and raws per band; bias, flat, crosstalk, defects and linearizer
-#      (and fringe for z) for every physical filter's first and last night;
+#      (and fringe for z) for every night of every physical filter;
 #      how much overscanRaw step0 still has to build.
 #   3. Whether sky frames exist for every filter and night (decides skyCorr's
 #      doSky in step2; a failure only when SKY_FRAMES=on).
