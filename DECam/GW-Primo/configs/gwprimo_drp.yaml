@@ -166,7 +166,8 @@ tasks:
       # and certifies sky frames; run/steps/step2.sh then passes
       # `-c skyCorr:doSky=True` once every filter and night of the field has
       # one (SKY_FRAMES in the field conf). Keep this default false: one
-      # config covers all bands, and the archival broad bands have none yet.
+      # config covers all bands. S250830bp sets SKY_FRAMES=off: the sky frames
+      # built so far were not usable.
       doSky: false
 
   jointcal:
@@ -181,6 +182,15 @@ tasks:
       # M517 and N540 -> DES g, N395 -> SDSS u): the zero points carry a
       # colour-dependent offset that the photo-z calibration has to absorb.
       applyColorTerms: false
+
+  selectDeepCoaddVisits:
+    class: lsst.pipe.tasks.selectImages.BestSeeingSelectVisitsTask
+    config:
+      # drp_pipe's default is 2.0 arcsec. 1.8 matches the per-detector cut of
+      # PsfWcsSelectImagesTask in makeDirectWarp and assembleCoadd, so no visit
+      # is selected only to have all of its detectors rejected later. No MJD
+      # limits and nVisitsMax stays -1: every visit under the cut is coadded.
+      maxPsfFwhm: 1.8
 
   mergeDetections:
     class: lsst.pipe.tasks.mergeDetections.MergeDetectionsTask
