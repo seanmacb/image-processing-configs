@@ -1,0 +1,47 @@
+# Config for plot_template_psf.py: which sky areas to make the template-PSF figures for.
+#
+#   sbatch run-plot-template-psf.sh                      # every event below
+#   sbatch run-plot-template-psf.sh template_psf_events.yaml --events S250830bp,S250725j
+#
+# Each event is a label plus an RA/Dec box in degrees (a patch is kept when its centre
+# is inside; ra_min > ra_max wraps through RA = 0) and, optionally, its own `csv`. An
+# event whose box is not filled in is skipped with a message, so the file can be
+# completed one event at a time. For events run through too_run/, the box is the
+# RA_MIN/RA_MAX/DEC_MIN/DEC_MAX of too_run/events/<event>/too_run.conf.
+
+repo: /shares/soares-santos.physik.uzh/ButlerProjects/desgw_postgres
+skymap: decam_rings_v1
+skymap_collection: skymaps
+
+# Where figures go: <output_root>/<label>/*.pdf, plus a patch_centers.csv cache.
+output_root: /shares/soares-santos.physik.uzh/ButlerProjects/desgw_postgres/logs/templatePsf/plots
+
+# GraceDB skymaps used for the 50%/90% contours on the spatial plot: <skymap_dir>/<label>.fits
+# (or an event's own `skymap:` path). Download them with fetch_event_skymaps.py.
+skymap_dir: /shares/soares-santos.physik.uzh/ButlerProjects/desgw_postgres/logs/templatePsf/skymaps
+
+# Default per-patch table(s) from measure_template_psf.py: a path, a glob, or a list of
+# them. This glob picks up the per-band outputs of run-measure-template-psf-bands.sh, so
+# the bands need not be merged first. $VARS are expanded.
+csv: /shares/soares-santos.physik.uzh/ButlerProjects/desgw_postgres/logs/templatePsf/bestSeeing_wide_gri/?/template_psf_per_patch.csv
+
+# O4 GW events. Boxes were derived from the GraceDB Bilby skymaps (fetched 2026-11-11):
+# the smallest RA/Dec box containing the 90% credible region, padded by 5 deg on the sky
+# (Dec +-5 deg; RA by asin(sin 5deg / cos(dec)) at the region's most poleward point).
+# The low-latency Bilby.multiorder.fits was used where the event has one; S240413p,
+# S240422ed, S240925n and S250727dc only have Bilby.offline* maps on GraceDB.
+events:
+  - {label: S230922g , ra_min: 322.5, ra_max: 354.3, dec_min: -41.8, dec_max: -6.1}  # Bilby.multiorder.fits [low-latency], 90% area 324 deg2
+  - {label: S240413p , ra_min: 152.7, ra_max: 172.3, dec_min: -2.8, dec_max: 18.3}  # Bilby.offline0.multiorder.fits [OFFLINE rerun (no low-latency Bilby map)], 90% area 34 deg2
+  - {label: S240422ed, ra_min: 109.8, ra_max: 137.9, dec_min: -45.8, dec_max: -7.8}  # Bilby.offline0.multiorder.fits [OFFLINE rerun (no low-latency Bilby map)], 90% area 259 deg2
+  - {label: S240511i , ra_min: 157.3, ra_max: 180.0, dec_min: -33.1, dec_max: -1.9}  # Bilby.multiorder.fits [low-latency], 90% area 85 deg2
+  - {label: S240908bs, ra_min: 295.1, ra_max: 76.2, dec_min: -85.3, dec_max: 36.7}  # Bilby.multiorder.fits [low-latency], 90% area 74 deg2  elongated region (RA span ~79 deg) -> large box
+  - {label: S240915b , ra_min: 99.1, ra_max: 127.3, dec_min: -56.7, dec_max: -42.6}  # Bilby.multiorder.fits [low-latency], 90% area 18 deg2
+  - {label: S240925n , ra_min: 284.3, ra_max: 301.2, dec_min: -1.6, dec_max: 17.6}  # Bilby.offline1.multiorder.fits [OFFLINE rerun (no low-latency Bilby map)], 90% area 14 deg2
+  - {label: S250205bk, ra_min: 131.1, ra_max: 152.6, dec_min: -18.0, dec_max: 12.0}  # Bilby.multiorder.fits [low-latency], 90% area 64 deg2
+  - {label: S250206dm, ra_min: 133.7, ra_max: 75.1, dec_min: -77.0, dec_max: 62.8}  # Bilby.multiorder.fits [low-latency], 90% area 910 deg2  POORLY LOCALISED / multi-lobed: the box is most of the sky; consider tightening by hand
+  - {label: S250328ae, ra_min: 136.2, ra_max: 152.2, dec_min: -0.9, dec_max: 19.8}  # Bilby.multiorder.fits [low-latency], 90% area 14 deg2
+  - {label: S250725j , ra_min: 222.8, ra_max: 243.4, dec_min: -43.3, dec_max: -29.0}  # Bilby.multiorder.fits [low-latency], 90% area 19 deg2
+  - {label: S250727dc, ra_min: 87.5, ra_max: 107.1, dec_min: -42.7, dec_max: -28.7}  # Bilby.offline0.multiorder.fits [OFFLINE rerun (no low-latency Bilby map)], 90% area 15 deg2
+  # Pilot event; box from too_run/events/S250830bp/too_run.conf.
+  - {label: S250830bp, ra_min: 315, ra_max: 335, dec_min: -80, dec_max: -75}
