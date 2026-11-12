@@ -15,12 +15,14 @@ variables (`$REPO`, `$LOGDIR`, `$IMAGE_PROC_CONFIG_DIR`) every script relies on.
 | `calib/base/` | `cp_verify` runs for the bias and flat calibrations, per era. |
 | `pilot/` | Event-specific runs for the pilot event `S250830bp`: its templates, the AP pipeline, and afterburners. |
 | `verify/` | Quality checks: `ap_verify` with fakes, and template PSF measurement. |
+| `too_run/` | One ToO follow-up end to end for any event, driven by a per-event conf: raw download, ingest, visits, overscan sources, templates and the AP pipeline, each step followed by a verify job. See [Running a ToO event](#running-a-too-event). |
 
 ### `configs/`
 
 | File | What it is |
 |---|---|
 | `QuickTemplate.yaml` | DECam template-building pipeline (ISR, `calibrateImage`, warps, good-seeing coadd). Uses `the_monster_20250219` as the astrometric and photometric reference catalog, and tolerates a missing Gaussian-flux aperture correction so z-band detectors are not lost. |
+| `QuickTemplateBestSeeing.yaml` | `QuickTemplate.yaml` with the visit selector swapped for `BestSeeingSelectVisitsTask`: at most 5 visits per patch, none above 1.5" visit-mean PSF FWHM. Used by `startup/templates/build-template.sh`. Duplicates the `calibrateImage` overrides of `QuickTemplate.yaml` (it cannot import it), so keep the two in sync. |
 | `desgw_ap_pipe.yaml` | The production AP pipeline: `ApPipeWithFakes` with solar-system association removed, templates as inputs, and 1-mag-bin fake-recovery analysis tasks. Its header lists the prerequisites. |
 | `fakes_mag_bins_afterburner.yaml` | Afterburner: recomputes fake-recovery metrics in 1-mag bins (15-24) from an existing AP run without rerunning anything upstream. (A copy lives in `pilot/`.) |
 | `desgw_injection_catalog.yaml` | Parameters for generating injection catalogs (not a pipeline). |
@@ -44,6 +46,14 @@ stage, and most scripts are per-era (`14`, `15-16`, `17-18`, `19-20`, `21-22`,
    `DECam/calib/template/<type>/<era>`. `certify-fringe-15-16.sh` certifies a
    finished set into `DECam/calib`. `complete-fringe-15-16.sh` finishes the
    2015-16 z-band fringe after the initial run (see its header).
+   Those `build-fringe-*.sh` sets are built from dome flats and are being
+   replaced by on-sky fringes in `calib/fringe/`: `fringe_sky.py select` picks
+   dithered z science exposures for each epoch (DES seasons merged into Y1-Y3,
+   Y4, Y5, Y6-Y11, split at the 2018-03-26 z filter-slot move; the last epoch
+   has no end date), `build-fringe-sky.sh <epoch>` runs
+   `configs/desgw_cpFringeSky.yaml`, and `certify-fringe-sky.sh` swaps the set
+   into `DECam/calib` (dry run without `--confirm`). See `fringe_sky.py` for
+   the details.
 3. **Verify calibrations** (`calib/base/verify-bias-*.sh`, `verify-flat-*.sh`)
    with `cp_verify`, writing to `DECam/calib/verify/<type>/<era>`.
 4. **Templates** (`startup/templates/`). See [Building templates](#building-templates).
@@ -72,11 +82,20 @@ stage, and most scripts are per-era (`14`, `15-16`, `17-18`, `19-20`, `21-22`,
 ## Building templates
 
 `startup/templates/build-template.sh` builds good-seeing templates for the
-whole DESGW archive, all four bands at once, as a Slurm array: one task per
-band (`g r i z`), each on its own 120-core / 472 GB node.
+DESGW archive, all four bands at once, as a Slurm array: one task per
+band (`g r i z`), each on its own 120-core / 472 GB node. It uses
+`configs/QuickTemplateBestSeeing.yaml`: at most 5 visits per patch, none with a
+visit-mean PSF FWHM above 1.5". Patches where no visit passes that cut get no
+template.
+
+The script does not run `isr` or `calibrateImage`. It runs only the
+`makeTemplate` and `makeMetrics` subsets of the pipeline and takes the
+single-frame products from earlier runs (see
+[Single-frame inputs](#single-frame-inputs)). The whole archive is built unless
+`EXTRA_QUERY` restricts it.
 
 ```bash
-sbatch startup/templates/build-template.sh
+sbatch --time=7-00:00:00 startup/templates/build-template.sh
 ```
 
 Why an array: the template pipeline has no cross-band dependencies, so each
@@ -86,29 +105,117 @@ band is an independent graph and scales out across nodes, which a single
 Each task:
 
 1. Builds a quantum graph with `pipetask qgraph` and saves it as
-   `$LOGDIR/buildTemplate-DESGW_<band>_<jobid>.qg`. This step only reads the
+   `$LOGDIR/buildTemplate-DESGW_<band>_<jobid>_<ITER>.qg`. This step only reads the
    repo, so the four tasks can run it concurrently. The new `.qg` format is
    much faster to write than the old `.qgraph`.
 2. Runs `pipetask run -g <graph> -j 120 --register-dataset-types
    --no-raise-on-partial-outputs`. Tasks start 30 s apart so they do not
    register dataset types simultaneously.
 
-Outputs go to `DECam/templates/pilotProc/<band>`. When all four finish, chain
-them:
+Outputs go to one RUN per band, `DECam/templates/bestSeeing_wide/<band>/<timestamp>`.
+There is no CHAINED collection: `pipetask run -g` is given no `-o`, so only
+the bare RUNs exist. When all four finish, list them and chain them yourself:
 
 ```bash
-butler collection-chain $REPO DECam/templates/pilotProc \
-    DECam/templates/pilotProc/{g,r,i,z}
+butler query-collections $REPO "DECam/templates/bestSeeing_wide/*"
+butler collection-chain $REPO DECam/templates/bestSeeing_wide \
+    DECam/templates/bestSeeing_wide/g/<ts> DECam/templates/bestSeeing_wide/r/<ts> \
+    DECam/templates/bestSeeing_wide/i/<ts> DECam/templates/bestSeeing_wide/z/<ts>
 ```
 
-The data query excludes detectors 61 and 31, detector 2 before 2016-12-29, and
-several science programs (see `DATAQUERY`). If the run is interrupted, rebuild
-the graph rather than reusing the old one, because `--skip-existing-in` is
-evaluated when the graph is built.
+The name differs from the event-area `DECam/templates/pilotProc_bestSeeing_avoidCorrupted`
+chain on purpose: `collection-chain` redefines a chain it is given.
+
+The data query excludes detectors 61 and 31, detector 2 before 2016-12-29,
+exposure 915609 detector 53 (truncated raw, its ISR cannot succeed), and several
+science programs (see `DATAQUERY`). To restrict the sky or time range, pass
+`EXTRA_QUERY`, e.g. for the S250830bp test box:
+
+```bash
+sbatch --export=ALL,EXTRA_QUERY="AND exposure.day_obs<20250829 AND (exposure.tracking_ra>315 AND exposure.tracking_ra<335) AND (exposure.tracking_dec>-80 AND exposure.tracking_dec<-75)" startup/templates/build-template.sh
+```
+
+Bump `ITER` in the script for every fresh run: a fresh run truncates
+`$LOGDIR/buildTemplate-DESGW_<band>_<ITER>.log`. `--skip-existing-in` is not
+used: the earlier run also holds selection and coadd outputs from the old
+quantile selector, which would be reused instead of rebuilt.
+
+### Single-frame inputs
+
+`isr` and `calibrateImage` are expensive, so they are not rerun. The first
+full-archive run left their products in the bare RUNs
+`DECam/templates/pilotProc/<band>/<timestamp>` (the chained
+`pilotProc_bestSeeing*` collections hold only the event area). They are complete
+for g, r and z, but i is only about 47% calibrated (92,494 of 198,359
+`preliminary_visit_image`, and no visit summaries):
+
+| Band | Images expected | `post_isr_image` | `preliminary_visit_image` |
+|---|---|---|---|
+| g | 88,215 | 88,212 | 88,211 |
+| r | 141,726 | 141,710 | 141,710 |
+| i | 198,359 | 192,981 | 92,494 |
+| z | 64,795 | 64,793 | 64,793 |
+
+(Counts as of 2026-10-27, with the `DATAQUERY` above and no `EXTRA_QUERY`.)
+`consolidateVisitSummary` is part of the `makeTemplate` subset, so the visit
+summaries (incomplete for r, absent for i in the old run) are rebuilt.
+
+Before building i templates, finish i's single-frame products:
+
+```bash
+sbatch startup/templates/complete-single-frame.sh   # array task 2 = band i
+```
+
+It runs the `singleFrame` subset with `--skip-existing-in` the old RUN, into
+`DECam/templates/singleFrameCompletion/<band>/<timestamp>`. `build-template.sh`
+reads the latest such RUN as an extra input when it exists. Without it, the i
+templates would be built from the images that happened to be calibrated.
+
+### Resuming after a timeout
+
+Both options extend the existing RUN, skip quanta that already have all their
+outputs (`--extend-run`), and remove partial outputs of quanta killed mid-write
+(`--clobber-outputs`). Use `--array` to resubmit only the bands that timed out
+(0=g, 1=r, 2=i, 3=z).
+
+```bash
+# A: reuse the saved graph of the timed-out array job (fastest restart)
+sbatch --array=0-3 --export=ALL,RESUME_JOBID=<array job id> build-template.sh
+
+# B: rebuild a smaller graph that excludes finished quanta
+sbatch --array=0-3 --export=ALL,RESUME=1 build-template.sh
+```
+
+Keep `ITER` in the script unchanged, and do not edit
+`QuickTemplateBestSeeing.yaml` or `QuickTemplate.yaml` between attempts (`--extend-run` refuses a RUN whose recorded configs differ).
+Graphs saved before `ITER` existed (`buildTemplate-DESGW_<band>_<jobid>.qg`)
+are found automatically. Both options pass `--output-run <band's latest RUN>`
+to `pipetask qgraph` and `pipetask run`. `-o` cannot be used because there is
+no chain to extend, and `pipetask run -g --extend-run` fails with "Cannot
+--extend-run when no output collection is given" unless an output collection is
+named on the command line.
 
 `build-overscanRaw-templates-desgw.sh` produces the `overscanRaw` crosstalk
 sources needed before template building. The `pilot/` scripts do the same for
 a single event on 30 cores.
+
+## Running a ToO event
+
+`too_run/` runs one follow-up from raw archive images to AP output, in two
+phases: templates for the event's sky box (once), then the search images (once
+per observed night). Nothing in it is event-specific except
+`too_run/events/<EVENT>/too_run.conf`:
+
+```bash
+too_run/new_event.sh S260101ab
+$EDITOR too_run/events/S260101ab/too_run.conf
+too_run/run_all.sh too_run/events/S260101ab/too_run.conf --nights 20260102,20260105
+```
+
+Every step is followed by its own verification job, and the chain stops at the
+first failure. See [`too_run/README.md`](too_run/README.md). The `pilot/` scripts
+remain as the record of the first event, S250830bp; `too_run/events/S250830bp`
+holds the same settings in conf form.
 
 ## Gotchas
 
