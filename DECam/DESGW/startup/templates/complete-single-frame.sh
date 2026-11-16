@@ -28,6 +28,15 @@
 #
 # Use the same sky/time restriction as build-template.sh (EXTRA_QUERY, empty by
 # default = whole archive), so that this job covers what that job will read.
+#
+# From scratch (FROM_SCRATCH=1): rerun every single-frame quantum, ignoring
+# what the old pilotProc RUN already holds, and write a new RUN next to it,
+#   DECam/templates/pilotProc/<band>/<timestamp>
+# build-template.sh takes the latest RUN under that prefix, so it picks up the
+# new one with no changes. The old RUN is left untouched. E.g. for z:
+#   sbatch --array=3 --export=ALL,FROM_SCRATCH=1 complete-single-frame.sh
+# Resume it with FROM_SCRATCH=1 and RESUME=1 together; that refuses to extend
+# the original full-archive RUN (one holding template_coadd).
 
 source /shares/soares-santos.physik.uzh/repos/Butler-imports/s3it_setup/DESGW_CONFIGS
 module load miniforge3
@@ -42,19 +51,35 @@ BAND=${BANDS[${SLURM_ARRAY_TASK_ID:-2}]}
 NPROC=120
 
 ITER=0  # Bump for a fresh run; keep it unchanged when resuming (RESUME).
-LOGFILE=$LOGDIR/singleFrameCompletion-DESGW_${BAND}_${ITER}.log
-QGRAPH=$LOGDIR/singleFrameCompletion-DESGW_${BAND}_${SLURM_ARRAY_JOB_ID:-local}_${ITER}.qg
-OUTPUT=DECam/templates/singleFrameCompletion/$BAND
 SF_RUN_PREFIX=DECam/templates/pilotProc
+if [ -n "$FROM_SCRATCH" ]; then
+    LOGNAME_BASE=singleFrameScratch-DESGW_${BAND}
+    OUTPUT=$SF_RUN_PREFIX/$BAND
+else
+    LOGNAME_BASE=singleFrameCompletion-DESGW_${BAND}
+    OUTPUT=DECam/templates/singleFrameCompletion/$BAND
+fi
+LOGFILE=$LOGDIR/${LOGNAME_BASE}_${ITER}.log
+QGRAPH=$LOGDIR/${LOGNAME_BASE}_${SLURM_ARRAY_JOB_ID:-local}_${ITER}.qg
 PIPELINE="$IMAGE_PROC_CONFIG_DIR/configs/QuickTemplateBestSeeing.yaml#singleFrame"
 
 # Latest RUN under a collection prefix (timestamps sort chronologically).
 latest_run() { butler query-collections $REPO "$1/*" | awk '$2=="RUN"{print $1}' | sort | tail -1; }
 
-SF_RUN=$(latest_run $SF_RUN_PREFIX/$BAND)
-if [ -z "$SF_RUN" ]; then
-    echo "ERROR: no single-frame RUN under $SF_RUN_PREFIX/$BAND/"
-    exit 1
+if [ -n "$FROM_SCRATCH" ]; then
+    # Nothing is reused from the old RUN: no --skip-existing-in, raws and
+    # calibs only as inputs.
+    SF_RUN=""
+    INPUTS=DECam/defaults
+    SKIP_FLAGS=""
+else
+    SF_RUN=$(latest_run $SF_RUN_PREFIX/$BAND)
+    if [ -z "$SF_RUN" ]; then
+        echo "ERROR: no single-frame RUN under $SF_RUN_PREFIX/$BAND/"
+        exit 1
+    fi
+    INPUTS=DECam/defaults,$SF_RUN
+    SKIP_FLAGS="--skip-existing-in $SF_RUN"
 fi
 
 EXTEND_FLAGS=""
@@ -67,6 +92,19 @@ if [ -n "$RESUME" ]; then
         echo "ERROR: no existing RUN under $OUTPUT/ to resume" | tee -a $LOGFILE
         exit 1
     fi
+    # With FROM_SCRATCH the latest RUN under pilotProc/<band> could still be
+    # the original full-archive run if the scratch job never got as far as
+    # writing; extending that would clobber its outputs. It is the one with
+    # coadds in it, which a singleFrame-only run never produces.
+    if [ -n "$FROM_SCRATCH" ] && python -c "
+import sys
+from lsst.daf.butler import Butler
+s = Butler('$REPO').registry.getCollectionSummary('$EXISTING_RUN')
+sys.exit(0 if 'template_coadd' in s.dataset_types.names else 1)
+"; then
+        echo "ERROR: $EXISTING_RUN holds template_coadd, so it is the original run, not a scratch run; refusing to extend it" | tee -a $LOGFILE
+        exit 1
+    fi
     echo "=== RESUME (job ${SLURM_ARRAY_JOB_ID:-local}) extending $EXISTING_RUN ===" | tee -a $LOGFILE
     RUN_ARGS="--output-run $EXISTING_RUN"
 else
@@ -74,16 +112,15 @@ else
 fi
 
 date | tee -a $LOGFILE
-echo "Band: $BAND  Output: $OUTPUT  Existing single-frame RUN: $SF_RUN  Qgraph: $QGRAPH  Flags: $EXTEND_FLAGS" | tee -a $LOGFILE
+echo "Band: $BAND  Output: $OUTPUT  From scratch: ${FROM_SCRATCH:-no}  Existing single-frame RUN: ${SF_RUN:-none}  Qgraph: $QGRAPH  Flags: $EXTEND_FLAGS $SKIP_FLAGS" | tee -a $LOGFILE
 
 # Same query as build-template.sh. Exposure 915609 detector 53 has a truncated raw
 # (cfitsio decompression error), so its ISR cannot succeed.
 DATAQUERY="instrument='DECam' AND exposure.observation_type='science' AND detector NOT IN (61,31) AND NOT (detector=2 AND exposure.day_obs<20161229) AND NOT (detector=53 AND exposure=915609) AND band='$BAND' AND exposure.science_program NOT IN ('2023B-851374','2024A-781233', '2024B-305328', '2025A-227091','2025B-485252') $EXTRA_QUERY"
 
-pipetask --long-log qgraph $EXTEND_FLAGS \
---skip-existing-in $SF_RUN \
+pipetask --long-log qgraph $EXTEND_FLAGS $SKIP_FLAGS \
 -b $REPO --instrument lsst.obs.decam.DarkEnergyCamera \
--i DECam/defaults,$SF_RUN \
+-i $INPUTS \
 ${RUN_ARGS:--o $OUTPUT} \
 -p "$PIPELINE" \
 -d "$DATAQUERY" \
