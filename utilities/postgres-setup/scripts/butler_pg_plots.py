@@ -132,7 +132,7 @@ def stacked(ctx, title, panels):
     """panels: dicts with ylabel, series=[(col, label)], how=both|max|mean, hline, scale, zero."""
     cols = sorted({c for p in panels for c, _ in p["series"]})
     r = ctx.inst.set_index("ts_utc")[cols].resample(ctx.freq)
-    mean, mx = r.mean(), r.max()
+    mean, mx, mi = r.mean(), r.max(), r.min()
     fig, axes = plt.subplots(len(panels), 1, figsize=(12, 2.5 * len(panels) + 0.6),
                              sharex=True, squeeze=False, layout="constrained")
     axes = axes[:, 0]
@@ -144,6 +144,10 @@ def stacked(ctx, title, panels):
             if how in ("both", "max"):
                 solid = how == "max"
                 ax.plot(mx.index, mx[col], color=color, lw=1.4 if solid else 0.7,
+                        alpha=1 if solid else 0.4, label=label if solid else None)
+            if how in ("both", "min"):
+                solid = how == "min"
+                ax.plot(mi.index, mi[col], color=color, lw=1.4 if solid else 0.7,
                         alpha=1 if solid else 0.4, label=label if solid else None)
         if "hline" in p:
             v, text = p["hline"]
@@ -157,7 +161,7 @@ def stacked(ctx, title, panels):
             ax.set_ylim(bottom=0)
         if len(p["series"]) > 1:
             ax.legend(loc="upper left", ncol=len(p["series"]))
-    finish(ctx, fig, axes, title, sub(ctx, "  |  solid = mean, faint = max per bin"))
+    finish(ctx, fig, axes, title, sub(ctx, "  |  solid = mean, faint = min/max per bin"))
     return fig
 
 
